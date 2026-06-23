@@ -1,0 +1,54 @@
+{
+  "name": "@sewdn/sandcastle-epic",
+  "version": "0.1.0",
+  "description": "Epic-scoped orchestration for Sandcastle — plan, implement, review, and merge GitHub issues in sequence",
+  "keywords": [
+    "agent",
+    "ai",
+    "epic",
+    "github",
+    "orchestration",
+    "sandcastle"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sewdn/sandcastle-epic.git"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "bun run build",
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ai-hero/sandcastle": "^0.10.0",
+    "yaml": "^2.8.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14",
+    "oxfmt": "^0.36.0",
+    "oxlint": "^1.51.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}
