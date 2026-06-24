@@ -32,7 +32,7 @@ export function parseEpicList(
 export function validateEpicSequence(epics: readonly string[]): void {
   if (epics.length === 0) {
     throw new Error(
-      "Epic list is empty. Set SANDCASTLE_EPICS=a0,a1 or SANDCASTLE_EPICS=aa0,aa1 or SANDCASTLE_EPICS=all.",
+      "Epic list is empty. Set SANDCASTLE_EPICS=a0,a1, SANDCASTLE_PHASE=aa, or SANDCASTLE_EPICS=all.",
     );
   }
 

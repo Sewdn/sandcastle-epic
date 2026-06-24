@@ -86,6 +86,48 @@ export function findIssueBacklogFileForEpic(
   return null;
 }
 
+/** Phase id from `issues.phase-<id>.yaml` (e.g. `aa` from `issues.phase-aa.yaml`). */
+export function backlogPhaseFromFileName(fileName: string): string | null {
+  if (!isIssueBacklogFile(fileName)) {
+    return null;
+  }
+  return fileName.slice("issues.phase-".length, -".yaml".length);
+}
+
+/** Phase ids for all issue backlog YAML files under the epics directory. */
+export function listBacklogPhases(
+  repoRoot: string,
+  options: BacklogDiscoveryOptions = {},
+): readonly string[] {
+  return listIssueBacklogFiles(repoRoot, options)
+    .map((filePath) => backlogPhaseFromFileName(path.basename(filePath)))
+    .filter((phase): phase is string => phase !== null);
+}
+
+/** Epic slugs declared in the backlog file for a single phase. */
+export function loadEpicSequenceForPhase(
+  repoRoot: string,
+  phase: string,
+  options: BacklogDiscoveryOptions = {},
+): string[] {
+  const normalized = phase.trim().toLowerCase();
+
+  for (const filePath of listIssueBacklogFiles(repoRoot, options)) {
+    const filePhase = backlogPhaseFromFileName(path.basename(filePath));
+    if (filePhase?.toLowerCase() !== normalized) {
+      continue;
+    }
+
+    const doc = parseBacklogFile(filePath);
+    return doc.epics ? Object.keys(doc.epics) : [];
+  }
+
+  const available = listBacklogPhases(repoRoot, options);
+  throw new Error(
+    `No issue backlog for phase '${phase.trim()}'. Available phase(s): ${available.join(", ") || "(none)"}`,
+  );
+}
+
 export function loadIssueBacklog(
   repoRoot: string,
   epic: string,

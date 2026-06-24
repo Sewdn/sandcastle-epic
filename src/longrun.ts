@@ -9,7 +9,7 @@ import {
 import { installHostDependencies } from "./deps.js";
 import { integrationBranchForEpic } from "./epics.js";
 import { parseEpicList, validateEpicSequence } from "./epics.js";
-import { loadCanonicalEpicSequence } from "./backlog.js";
+import { loadCanonicalEpicSequence, loadEpicSequenceForPhase } from "./backlog.js";
 import {
   bootstrapIntegrationBranchFromEpic,
   pushIntegrationBranchIfEnabled,
@@ -50,7 +50,12 @@ async function prepareFirstEpicInChain(
   longRun: LongRunOrchestrationOptions,
   completedEpics: readonly string[],
 ): Promise<void> {
-  const prior = priorCompletedEpic(firstEpic, completedEpics, longRun.epics);
+  const prior = priorCompletedEpic(
+    firstEpic,
+    completedEpics,
+    longRun.epics,
+    longRun.canonicalEpicSequence,
+  );
   if (prior) {
     console.log(
       `  Resuming after completed ${prior}: bootstrapping ${integrationBranchForEpic(firstEpic)}…`,
@@ -95,6 +100,9 @@ export async function runLongEpicOrchestration(
   console.log(
     `Long-run Sandcastle: ${epicsToRun.length} epic(s) to run — ${epicsToRun.join(" → ")}`,
   );
+  if (longRun.phase) {
+    console.log(`  Phase scope: ${longRun.phase}`);
+  }
   console.log(
     "  Handoff: each completed integrate/epic-* seeds the next integration branch (no merge to main).",
   );
@@ -193,6 +201,7 @@ export async function runLongEpicOrchestration(
 export function resolveLongRunConfig(env: {
   epics?: string;
   push?: string;
+  phase?: string;
   repoRoot: string;
   epicsDir?: string;
   /** @deprecated Prefer repoRoot-only; canonical order comes from issue backlog YAML. */
@@ -200,8 +209,25 @@ export function resolveLongRunConfig(env: {
 }): LongRunOrchestrationOptions {
   const discovery = env.epicsDir ? { epicsDir: env.epicsDir } : {};
   const canonicalEpics = env.defaultEpics ?? loadCanonicalEpicSequence(env.repoRoot, discovery);
+  const phase = env.phase?.trim();
+  const phaseEpics = phase ? loadEpicSequenceForPhase(env.repoRoot, phase, discovery) : canonicalEpics;
+  const epics = parseEpicList(env.epics, phaseEpics);
+
+  if (phase) {
+    const allowed = new Set(phaseEpics);
+    for (const epic of epics) {
+      if (!allowed.has(epic)) {
+        throw new Error(
+          `Epic '${epic}' is not in phase '${phase}'. Phase epics: ${phaseEpics.join(", ")}`,
+        );
+      }
+    }
+  }
+
   return {
-    epics: parseEpicList(env.epics, canonicalEpics),
+    epics,
     pushRemotes: env.push === "1" || env.push?.toLowerCase() === "true",
+    phase,
+    canonicalEpicSequence: canonicalEpics,
   };
 }

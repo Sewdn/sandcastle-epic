@@ -70,10 +70,13 @@ export {
 } from "./git-main.js";
 export {
   DEFAULT_EPICS_DIR,
+  backlogPhaseFromFileName,
   findIssueBacklogFileForEpic,
   isIssueBacklogFile,
+  listBacklogPhases,
   listIssueBacklogFiles,
   loadCanonicalEpicSequence,
+  loadEpicSequenceForPhase,
   loadIssueBacklog,
   resolveEpicsDir,
   type BacklogDiscoveryOptions,

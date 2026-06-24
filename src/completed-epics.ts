@@ -36,20 +36,22 @@ export function isEpicCompleted(sandcastleDir: string, epic: string): boolean {
   return loadCompletedEpics(sandcastleDir).includes(epic);
 }
 
-/** Last completed epic in canonical Phase A order that precedes `epic`. */
+/** Last completed epic in order that precedes `epic`. */
 export function priorCompletedEpic(
   epic: string,
   completed: readonly string[],
   epicSequence: readonly string[],
+  canonicalSequence?: readonly string[],
 ): string | null {
   const completedSet = new Set(completed);
-  const index = epicSequence.indexOf(epic);
+  const lookupSequence = canonicalSequence ?? epicSequence;
+  const index = lookupSequence.indexOf(epic);
   if (index <= 0) {
     return null;
   }
 
   for (let i = index - 1; i >= 0; i--) {
-    const candidate = epicSequence[i]!;
+    const candidate = lookupSequence[i]!;
     if (completedSet.has(candidate)) {
       return candidate;
     }

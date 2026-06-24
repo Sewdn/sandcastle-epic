@@ -120,6 +120,10 @@ export type LongRunSandcastleConfig = {
   epics: readonly string[];
   /** Push integration branches after epic completion and when creating the next epic branch. */
   pushRemotes: boolean;
+  /** When set, longrun is limited to epics from this backlog phase. */
+  phase?: string;
+  /** Full cross-phase epic order for integration-branch handoff lookups. */
+  canonicalEpicSequence?: readonly string[];
 };
 
 export type EpicLoopResult = {

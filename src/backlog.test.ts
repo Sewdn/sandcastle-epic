@@ -4,9 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  backlogPhaseFromFileName,
   isIssueBacklogFile,
+  listBacklogPhases,
   listIssueBacklogFiles,
   loadCanonicalEpicSequence,
+  loadEpicSequenceForPhase,
   loadIssueBacklog,
 } from "./backlog.js";
 
@@ -32,6 +35,57 @@ describe("listIssueBacklogFiles", () => {
 
     const files = listIssueBacklogFiles(repoRoot).map((filePath) => filePath.split("/").pop());
     expect(files).toEqual(["issues.phase-a.yaml", "issues.phase-aa.yaml", "issues.phase-b.yaml"]);
+  });
+});
+
+describe("backlogPhaseFromFileName", () => {
+  test("extracts phase id from backlog file names", () => {
+    expect(backlogPhaseFromFileName("issues.phase-a.yaml")).toBe("a");
+    expect(backlogPhaseFromFileName("issues.phase-aa.yaml")).toBe("aa");
+    expect(backlogPhaseFromFileName("phase-a.md")).toBeNull();
+  });
+});
+
+describe("loadEpicSequenceForPhase", () => {
+  test("returns epics for a single phase only", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "sandcastle-epic-backlog-phase-"));
+    const epicsDir = join(repoRoot, "docs/epics");
+    mkdirSync(epicsDir, { recursive: true });
+
+    writeFileSync(
+      join(epicsDir, "issues.phase-a.yaml"),
+      `version: 1
+phase: a
+epics:
+  a0:
+    name: A0
+    integration_branch: integrate/epic-a0
+issues: []
+`,
+    );
+
+    writeFileSync(
+      join(epicsDir, "issues.phase-aa.yaml"),
+      `version: 1
+phase: aa
+epics:
+  aa0:
+    name: AA0
+    integration_branch: integrate/epic-aa0
+  aa1:
+    name: AA1
+    integration_branch: integrate/epic-aa1
+issues: []
+`,
+    );
+
+    expect(loadEpicSequenceForPhase(repoRoot, "aa")).toEqual(["aa0", "aa1"]);
+    expect(listBacklogPhases(repoRoot)).toEqual(["a", "aa"]);
+  });
+
+  test("throws when the phase backlog file is missing", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "sandcastle-epic-backlog-missing-"));
+    expect(() => loadEpicSequenceForPhase(repoRoot, "aa")).toThrow(/Available phase\(s\)/);
   });
 });
 
