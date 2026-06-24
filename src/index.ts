@@ -69,6 +69,19 @@ export {
   type SyncIntegrationBranchChainResult,
 } from "./git-main.js";
 export {
+  DEFAULT_EPICS_DIR,
+  findIssueBacklogFileForEpic,
+  isIssueBacklogFile,
+  listIssueBacklogFiles,
+  loadCanonicalEpicSequence,
+  loadIssueBacklog,
+  resolveEpicsDir,
+  type BacklogDiscoveryOptions,
+  type BacklogIssue,
+  type EpicMeta,
+  type IssueBacklog,
+} from "./backlog.js";
+export {
   resolveLongRunConfig,
   runLongEpicOrchestration,
   type LongRunOrchestrationResult,

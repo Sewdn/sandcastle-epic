@@ -9,6 +9,7 @@ import {
 import { installHostDependencies } from "./deps.js";
 import { integrationBranchForEpic } from "./epics.js";
 import { parseEpicList, validateEpicSequence } from "./epics.js";
+import { loadCanonicalEpicSequence } from "./backlog.js";
 import {
   bootstrapIntegrationBranchFromEpic,
   pushIntegrationBranchIfEnabled,
@@ -192,10 +193,15 @@ export async function runLongEpicOrchestration(
 export function resolveLongRunConfig(env: {
   epics?: string;
   push?: string;
-  defaultEpics: readonly string[];
+  repoRoot: string;
+  epicsDir?: string;
+  /** @deprecated Prefer repoRoot-only; canonical order comes from issue backlog YAML. */
+  defaultEpics?: readonly string[];
 }): LongRunOrchestrationOptions {
+  const discovery = env.epicsDir ? { epicsDir: env.epicsDir } : {};
+  const canonicalEpics = env.defaultEpics ?? loadCanonicalEpicSequence(env.repoRoot, discovery);
   return {
-    epics: parseEpicList(env.epics, env.defaultEpics),
+    epics: parseEpicList(env.epics, canonicalEpics),
     pushRemotes: env.push === "1" || env.push?.toLowerCase() === "true",
   };
 }

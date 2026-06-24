@@ -18,12 +18,17 @@ describe("validateEpicSequence", () => {
   test("rejects empty and duplicate slugs", () => {
     expect(() => validateEpicSequence([])).toThrow(/empty/i);
     expect(() => validateEpicSequence(["a0", "a0"])).toThrow(/duplicate/i);
-    expect(() => validateEpicSequence(["b0"])).toThrow(/invalid/i);
+    expect(() => validateEpicSequence(["x0"])).toThrow(/invalid/i);
+  });
+
+  test("accepts Phase AA slugs", () => {
+    expect(() => validateEpicSequence(["aa0", "aa1"])).not.toThrow();
   });
 });
 
 describe("integrationBranchForEpic", () => {
   test("maps slug to integrate branch name", () => {
     expect(integrationBranchForEpic("a0")).toBe("integrate/epic-a0");
+    expect(integrationBranchForEpic("aa0")).toBe("integrate/epic-aa0");
   });
 });

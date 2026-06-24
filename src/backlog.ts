@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 
-export type IssuePhase = "a" | "b" | "c";
+/** Default directory (relative to repo root) containing issue backlog YAML files. */
+export const DEFAULT_EPICS_DIR = "docs/epics";
 
 export type EpicMeta = {
   readonly name: string;
@@ -27,40 +28,95 @@ export type BacklogIssue = {
 
 export type IssueBacklog = {
   readonly version: 1;
-  readonly phase: IssuePhase;
+  readonly phase: string;
   readonly epics: Readonly<Record<string, EpicMeta>>;
   readonly issues: BacklogIssue[];
 };
 
-const PHASE_BACKLOG_FILES: Readonly<Record<IssuePhase, string>> = {
-  a: "docs/epics/issues.phase-a.yaml",
-  b: "docs/epics/issues.phase-b.yaml",
-  c: "docs/epics/issues.phase-c.yaml",
+export type BacklogDiscoveryOptions = {
+  /** Relative to repo root. Defaults to {@link DEFAULT_EPICS_DIR}. */
+  readonly epicsDir?: string;
 };
 
-function stripYamlHeader(raw: string): string {
-  return raw.replace(/^#.*\n/m, "");
+const stripYamlHeader = (raw: string): string => raw.replace(/^#.*\n/m, "");
+
+/** Host projects use `issues.phase-<id>.yaml` files under the epics directory. */
+export const isIssueBacklogFile = (fileName: string): boolean =>
+  fileName.startsWith("issues.phase-") && fileName.endsWith(".yaml");
+
+export function resolveEpicsDir(repoRoot: string, options: BacklogDiscoveryOptions = {}): string {
+  return path.join(repoRoot, options.epicsDir ?? DEFAULT_EPICS_DIR);
 }
 
-export function phaseForEpicSlug(epic: string): IssuePhase {
-  if (/^a\d+$/.test(epic)) {
-    return "a";
+/** Issue backlog YAML paths under the epics directory, sorted alphabetically. */
+export function listIssueBacklogFiles(
+  repoRoot: string,
+  options: BacklogDiscoveryOptions = {},
+): readonly string[] {
+  const epicsDir = resolveEpicsDir(repoRoot, options);
+
+  try {
+    return readdirSync(epicsDir)
+      .filter(isIssueBacklogFile)
+      .sort((left, right) => left.localeCompare(right))
+      .map((fileName) => path.join(epicsDir, fileName));
+  } catch {
+    return [];
   }
-  if (/^b\d+$/.test(epic)) {
-    return "b";
-  }
-  if (/^c\d+$/.test(epic)) {
-    return "c";
-  }
-  throw new Error(`Cannot infer phase for epic slug '${epic}'.`);
 }
 
-export function loadIssueBacklog(repoRoot: string, epic: string): IssueBacklog {
-  const phase = phaseForEpicSlug(epic);
-  const relativePath = PHASE_BACKLOG_FILES[phase];
-  const filePath = path.join(repoRoot, relativePath);
+const parseBacklogFile = (filePath: string): IssueBacklog => {
   const raw = readFileSync(filePath, "utf8");
   return parseYaml(stripYamlHeader(raw)) as IssueBacklog;
+};
+
+/** Find the backlog file that defines `epic`, scanning files in alphabetical order. */
+export function findIssueBacklogFileForEpic(
+  repoRoot: string,
+  epic: string,
+  options: BacklogDiscoveryOptions = {},
+): string | null {
+  for (const filePath of listIssueBacklogFiles(repoRoot, options)) {
+    const doc = parseBacklogFile(filePath);
+    if (doc.epics?.[epic]) {
+      return filePath;
+    }
+  }
+
+  return null;
+}
+
+export function loadIssueBacklog(
+  repoRoot: string,
+  epic: string,
+  options: BacklogDiscoveryOptions = {},
+): IssueBacklog {
+  const filePath = findIssueBacklogFileForEpic(repoRoot, epic, options);
+
+  if (!filePath) {
+    throw new Error(
+      `No issue backlog file defines epic '${epic}' under ${options.epicsDir ?? DEFAULT_EPICS_DIR}.`,
+    );
+  }
+
+  return parseBacklogFile(filePath);
+}
+
+/** Canonical epic order from all backlog YAML files in alphabetical file order. */
+export function loadCanonicalEpicSequence(
+  repoRoot: string,
+  options: BacklogDiscoveryOptions = {},
+): string[] {
+  const sequence: string[] = [];
+
+  for (const filePath of listIssueBacklogFiles(repoRoot, options)) {
+    const doc = parseBacklogFile(filePath);
+    if (doc.epics) {
+      sequence.push(...Object.keys(doc.epics));
+    }
+  }
+
+  return sequence;
 }
 
 export function epicIssues(backlog: IssueBacklog, epic: string): BacklogIssue[] {
