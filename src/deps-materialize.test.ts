@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { materializeLinkedPackages } from "./deps-materialize.js";
+import { materializeLinkedPackages, pruneBrokenSymlinks } from "./deps-materialize.js";
 
 let repoRoot = "";
 let externalPackage = "";
@@ -42,6 +42,17 @@ test("materializeLinkedPackages copies bun-linked packages into node_modules", (
   const linkedPath = path.join(repoRoot, "node_modules", "@sewdn", "sandcastle-epic");
   expect(lstatSync(linkedPath).isSymbolicLink()).toBe(false);
   expect(readFileSync(path.join(linkedPath, "index.js"), "utf8")).toContain("ok = true");
+});
+
+test("pruneBrokenSymlinks removes dead symlinks without throwing", () => {
+  const broken = path.join(repoRoot, "node_modules", "@verbouwing", "sandcastle-epic");
+  mkdirSync(path.dirname(broken), { recursive: true });
+  symlinkSync(path.join(repoRoot, "packages", "missing-pkg"), broken);
+
+  const pruned = pruneBrokenSymlinks(repoRoot);
+
+  expect(pruned).toEqual(["node_modules/@verbouwing/sandcastle-epic"]);
+  expect(existsSync(broken)).toBe(false);
 });
 
 test("materializeLinkedPackages leaves in-repo workspace symlinks untouched", () => {
