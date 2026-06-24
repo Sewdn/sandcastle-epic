@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { $ } from "bun";
+import { materializeLinkedPackages } from "./deps-materialize.js";
 
 const SVC_PRISMA_DIR = "packages/svc-prisma";
 const LOCKFILE_UPDATE_MESSAGE = "chore(sandcastle): refresh lockfile after merge";
@@ -28,6 +29,11 @@ export async function installHostDependencies(repoRoot: string): Promise<void> {
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString().trim();
     throw new Error(`Host bun install failed in ${repoRoot}${stderr ? `: ${stderr}` : ""}`);
+  }
+
+  const materialized = materializeLinkedPackages(repoRoot);
+  if (materialized.length > 0) {
+    console.log(`  Materialized linked package(s) for sandbox copy: ${materialized.join(", ")}`);
   }
 
   await regenerateHostPrismaClient(repoRoot);

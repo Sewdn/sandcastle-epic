@@ -1,9 +1,11 @@
-/** Paths copied from the host repo into each sandbox worktree before `bun install`. */
+/** Paths copied from the host repo into each sandbox worktree (pre-seeded node_modules). */
 export const COPY_TO_WORKTREE = ["node_modules", ".dora"] as const;
 
 const SANDBOX_ON_READY = [
   "mkdir -p /home/agent/tmp /home/agent/tmp/turbo-cache /home/agent/tmp/xdg-data /home/agent/tmp/xdg-cache /home/agent/.cache/bun",
-  "if [ -d node_modules ] && [ -f bun.lock ]; then bun install --frozen-lockfile --ignore-scripts; else bun install --ignore-scripts; fi",
+  // Host copies node_modules (with bun-linked packages materialized). Re-running install
+  // inside the sandbox fails for link: specs and breaks copied workspace symlinks.
+  "if [ ! -d node_modules ]; then bun install --ignore-scripts; fi",
 ].join(" && ");
 
 export const sandboxHooks = {
