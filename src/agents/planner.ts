@@ -15,6 +15,11 @@ import {
   type EpicPlanSource,
 } from "../planner-report.js";
 import {
+  formatHostPlannerBaselineForPrompt,
+  formatProjectContextForPrompt,
+  issueCachePathForPrompt,
+} from "../planner-prompt.js";
+import {
   buildEpicBrief,
   filterClustersToEpic,
   filterClustersToIssues,
@@ -98,8 +103,12 @@ export async function runEpicPlanner(ctx: EpicContext): Promise<IssueCluster[]> 
       promptArgs: {
         ...ctx.sharedPromptArgs,
         ...(await skillsPromptArgs(ctx, "planner")),
-        EPIC_BRIEF: JSON.stringify(brief, null, 2),
-        PROJECT_MAP: JSON.stringify(ctx.projectMap, null, 2),
+        HOST_PLANNER_BASELINE: formatHostPlannerBaselineForPrompt(brief, ctx.projectMap),
+        PROJECT_CONTEXT: formatProjectContextForPrompt(ctx.projectMap),
+        ISSUE_CACHE_PATH: issueCachePathForPrompt(
+          ctx.config.sandcastleDir,
+          ctx.config.repoRoot,
+        ),
       },
       output: sandcastle.Output.object({ tag: "plan", schema: epicPlanSchema }),
     });
