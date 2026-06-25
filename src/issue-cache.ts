@@ -4,7 +4,7 @@ import path from "node:path";
 import { loadMergedIssueBacklog } from "./backlog.js";
 import { fetchOpenReadyForAgentIssues, type OpenReadyIssue } from "./project-map.js";
 
-export const ISSUE_CACHE_VERSION = 1 as const;
+export const ISSUE_CACHE_VERSION = 2 as const;
 export const ISSUE_CACHE_DIR = "cache";
 export const ISSUE_CACHE_FILENAME = "cachemap.json";
 
@@ -16,6 +16,7 @@ export type IssueDependencyCacheEntry = {
   readonly parallel: boolean;
   readonly blockedByLocalIds: readonly string[];
   readonly blockedByEpicsOnMain: readonly string[];
+  readonly blockedByGithubIds: readonly string[];
   readonly openBlockerIds: readonly string[];
 };
 
@@ -182,6 +183,7 @@ export function dependencyCacheEntryForIssue(issue: {
   readonly parallel: boolean;
   readonly blockedByLocalIds: readonly string[];
   readonly blockedByEpicsOnMain: readonly string[];
+  readonly blockedByGithubIds: readonly string[];
   readonly openBlockerIds: readonly string[];
 }): IssueDependencyCacheEntry {
   return {
@@ -192,6 +194,7 @@ export function dependencyCacheEntryForIssue(issue: {
     parallel: issue.parallel,
     blockedByLocalIds: issue.blockedByLocalIds,
     blockedByEpicsOnMain: issue.blockedByEpicsOnMain,
+    blockedByGithubIds: issue.blockedByGithubIds,
     openBlockerIds: issue.openBlockerIds,
   };
 }

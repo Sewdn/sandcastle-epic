@@ -16,6 +16,7 @@ const issue = (
   parallel: false,
   blockedByLocalIds: [],
   blockedByEpicsOnMain: [],
+  blockedByGithubIds: [],
   openBlockerIds,
   status,
   references: [],

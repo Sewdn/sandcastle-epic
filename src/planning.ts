@@ -1,7 +1,6 @@
 import { $ } from "bun";
 import type { EpicContext } from "./context.js";
 import {
-  githubIdForLocalId,
   issueByLocalId,
   loadCanonicalEpicSequence,
   loadMergedIssueBacklog,
@@ -60,6 +59,8 @@ export type BriefIssue = {
   readonly parallel: boolean;
   readonly blockedByLocalIds: readonly string[];
   readonly blockedByEpicsOnMain: readonly string[];
+  /** Structured GitHub blocked-by issue numbers (source of truth for issue deps). */
+  readonly blockedByGithubIds: readonly string[];
   readonly openBlockerIds: readonly string[];
   readonly status: BriefIssueStatus;
   readonly references: readonly string[];
@@ -90,6 +91,7 @@ export type EpicBrief = {
     readonly blockedIssues: readonly {
       readonly id: string;
       readonly epic: string;
+      readonly blockedByGithubIds: readonly string[];
       readonly openBlockerIds: readonly string[];
     }[];
     readonly waitingOnMerge: readonly string[];
@@ -136,38 +138,35 @@ type IssueIntegrationState = {
   readonly pendingMergeGithubIds: ReadonlySet<string>;
 };
 
-async function isLocalBlockerOpen(
-  blockerLocalId: string,
+async function isGithubBlockerOpen(
+  blockerGithubId: string,
   lookup: ReadonlyMap<string, BacklogIssue>,
   openGithubIds: ReadonlySet<string>,
   integrationState: IssueIntegrationState,
 ): Promise<{ readonly open: boolean; readonly blockerId: string | null }> {
-  const blockerIssue = lookup.get(blockerLocalId);
-  const githubId = githubIdForLocalId(blockerLocalId, lookup);
-  const blockerId = githubId ?? blockerLocalId;
+  const blockerId = blockerGithubId;
 
-  if (!githubId) {
+  if (integrationState.integratedGithubIds.has(blockerGithubId)) {
     return { open: false, blockerId: null };
   }
 
-  if (integrationState.integratedGithubIds.has(githubId)) {
-    return { open: false, blockerId: null };
-  }
-
-  if (integrationState.pendingMergeGithubIds.has(githubId)) {
+  if (integrationState.pendingMergeGithubIds.has(blockerGithubId)) {
     return { open: true, blockerId };
   }
 
-  if (openGithubIds.has(githubId)) {
+  if (openGithubIds.has(blockerGithubId)) {
     return { open: true, blockerId };
   }
 
+  const blockerIssue = [...lookup.values()].find(
+    (entry) => entry.github != null && String(entry.github) === blockerGithubId,
+  );
   const epic = blockerIssue?.epic;
   if (!epic) {
     return { open: false, blockerId: null };
   }
 
-  if (await integrationMentionsIssueOnBranch(integrationBranchForEpic(epic), githubId)) {
+  if (await integrationMentionsIssueOnBranch(integrationBranchForEpic(epic), blockerGithubId)) {
     return { open: false, blockerId: null };
   }
 
@@ -180,12 +179,13 @@ async function resolveOpenBlockerIds(
   openGithubIds: ReadonlySet<string>,
   integrationState: IssueIntegrationState,
   completedEpics: ReadonlySet<string>,
+  blockedByGithubIds: readonly string[],
 ): Promise<string[]> {
   const blockers: string[] = [];
 
-  for (const localId of issue.blocked_by_issues ?? []) {
-    const result = await isLocalBlockerOpen(
-      localId,
+  for (const blockerGithubId of blockedByGithubIds) {
+    const result = await isGithubBlockerOpen(
+      blockerGithubId,
       lookup,
       openGithubIds,
       integrationState,
@@ -264,6 +264,7 @@ export async function buildOpenIssuesFromBacklog(
   const lookup = issueByLocalId(backlog);
   const loaded = preloadedOpenReady ?? (await loadOpenReadyForAgentIssues(repoRoot, cacheOptions));
   const openReady = loaded.issues;
+  const openReadyById = new Map(openReady.map((issue) => [issue.id, issue]));
   const openGithubIds = new Set(openReady.map((issue) => issue.id));
   const completedEpics = new Set(projectMap?.completedEpics ?? []);
   const useDependencyCache =
@@ -316,6 +317,9 @@ export async function buildOpenIssuesFromBacklog(
 
     const { yamlIssue, id, branch, commitsAhead } = candidate;
     const cachedEntry = useDependencyCache ? loaded.cache?.issueDependencies[id] : undefined;
+    const githubIssue = openReadyById.get(id);
+    const blockedByGithubIds =
+      cachedEntry?.blockedByGithubIds ?? githubIssue?.blockedByGithubIds ?? [];
 
     const openBlockerIds =
       cachedEntry?.openBlockerIds ??
@@ -325,6 +329,7 @@ export async function buildOpenIssuesFromBacklog(
         openGithubIds,
         integrationState,
         completedEpics,
+        blockedByGithubIds,
       ));
 
     const briefIssue: BriefIssue = {
@@ -336,6 +341,7 @@ export async function buildOpenIssuesFromBacklog(
       parallel: yamlIssue.parallel ?? false,
       blockedByLocalIds: yamlIssue.blocked_by_issues ?? [],
       blockedByEpicsOnMain: yamlIssue.blocked_by_epics_on_main ?? [],
+      blockedByGithubIds: [...blockedByGithubIds],
       openBlockerIds: [...openBlockerIds],
       status: commitsAhead > 0 ? "pending_merge" : "open",
       references: yamlIssue.references ?? [],
@@ -433,6 +439,7 @@ export async function buildEpicBrief(ctx: EpicContext): Promise<EpicBrief> {
     .map((issue) => ({
       id: issue.id,
       epic: issue.epic,
+      blockedByGithubIds: issue.blockedByGithubIds,
       openBlockerIds: issue.openBlockerIds,
     }));
 

@@ -20,6 +20,7 @@ function briefIssue(
     parallel: false,
     blockedByLocalIds: [],
     blockedByEpicsOnMain,
+    blockedByGithubIds: blockers.filter((blocker) => !blocker.startsWith("epic:")),
     openBlockerIds: blockers,
     status,
     references: [],

@@ -158,6 +158,18 @@ export {
   type EpicProjectStatus,
   type ProjectMap,
 } from "./project-map.js";
+export {
+  addIssueBlockedBy,
+  fetchBlockedByForIssues,
+  fetchIssueBlockedBy,
+  fetchIssueDatabaseId,
+  planBlockedBySync,
+  removeIssueBlockedBy,
+  resolveGithubRepoSlug,
+  syncIssueBlockedByRelationships,
+  type BlockedBySyncPlan,
+  type GithubBlockedByIssue,
+} from "./github-issue-dependencies.js";
 export { loadEnrichedProjectMapFromGithub } from "./project-state.js";
 export {
   ISSUE_CACHE_DIR,

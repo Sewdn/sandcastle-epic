@@ -20,7 +20,7 @@ describe("issue dependency cache", () => {
       version: ISSUE_CACHE_VERSION,
       backlogFingerprint: fingerprint,
       githubFetchedAt: new Date().toISOString(),
-      openReadyForAgent: [{ id: "171", title: "Test", epicSlug: "aa5" }],
+      openReadyForAgent: [{ id: "171", title: "Test", epicSlug: "aa5", blockedByGithubIds: [] }],
       issueDependencies: {
         "171": {
           id: "171",
@@ -30,6 +30,7 @@ describe("issue dependency cache", () => {
           parallel: false,
           blockedByLocalIds: [],
           blockedByEpicsOnMain: [],
+          blockedByGithubIds: [],
           openBlockerIds: [],
         },
       },
@@ -52,19 +53,19 @@ describe("issue dependency cache", () => {
     expect(
       openIssueSetsMatch(
         [
-          { id: "2", title: "b", epicSlug: "aa2" },
-          { id: "1", title: "a", epicSlug: "aa1" },
+          { id: "2", title: "b", epicSlug: "aa2", blockedByGithubIds: [] },
+          { id: "1", title: "a", epicSlug: "aa1", blockedByGithubIds: [] },
         ],
         [
-          { id: "1", title: "a", epicSlug: "aa1" },
-          { id: "2", title: "b", epicSlug: "aa2" },
+          { id: "1", title: "a", epicSlug: "aa1", blockedByGithubIds: [] },
+          { id: "2", title: "b", epicSlug: "aa2", blockedByGithubIds: [] },
         ],
       ),
     ).toBe(true);
     expect(
       openIssueSetsMatch(
-        [{ id: "1", title: "a", epicSlug: "aa1" }],
-        [{ id: "2", title: "b", epicSlug: "aa2" }],
+        [{ id: "1", title: "a", epicSlug: "aa1", blockedByGithubIds: [] }],
+        [{ id: "2", title: "b", epicSlug: "aa2", blockedByGithubIds: [] }],
       ),
     ).toBe(false);
   });

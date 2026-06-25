@@ -1,4 +1,8 @@
 import { $ } from "bun";
+import {
+  fetchBlockedByForIssues,
+  resolveGithubRepoSlug,
+} from "./github-issue-dependencies.js";
 import { printProjectMapReport } from "./project-map-report.js";
 import { epicLabelForEpic, integrationBranchForEpic } from "./epics.js";
 import {
@@ -53,6 +57,8 @@ export type OpenReadyIssue = {
   readonly id: string;
   readonly title: string;
   readonly epicSlug: string | null;
+  /** GitHub issue numbers blocking this issue (structured blocked-by relationships). */
+  readonly blockedByGithubIds: readonly string[];
 };
 
 export function epicSlugFromIssueLabels(labels: readonly GithubLabel[]): string | null {
@@ -71,6 +77,7 @@ export function openReadyIssuesFromGithubPayload(
     id: String(issue.number),
     title: issue.title,
     epicSlug: epicSlugFromIssueLabels(issue.labels),
+    blockedByGithubIds: [],
   }));
 }
 
@@ -136,7 +143,9 @@ export function filterEpicsFromProjectMap(
   };
 }
 
-export async function fetchOpenReadyForAgentIssues(): Promise<readonly OpenReadyIssue[]> {
+export async function fetchOpenReadyForAgentIssues(
+  repo?: string,
+): Promise<readonly OpenReadyIssue[]> {
   const result =
     await $`gh issue list --state open --label ready-for-agent --limit 500 --json number,title,labels`
       .quiet()
@@ -150,7 +159,21 @@ export async function fetchOpenReadyForAgentIssues(): Promise<readonly OpenReady
   }
 
   const parsed = JSON.parse(result.stdout.toString()) as GithubOpenIssue[];
-  return openReadyIssuesFromGithubPayload(parsed);
+  const base = openReadyIssuesFromGithubPayload(parsed);
+  if (base.length === 0) {
+    return base;
+  }
+
+  const repoSlug = repo ?? (await resolveGithubRepoSlug());
+  const blockedByByIssue = await fetchBlockedByForIssues(
+    repoSlug,
+    base.map((issue) => Number(issue.id)),
+  );
+
+  return base.map((issue) => ({
+    ...issue,
+    blockedByGithubIds: blockedByByIssue.get(issue.id) ?? [],
+  }));
 }
 
 export async function loadProjectMapFromGithub(

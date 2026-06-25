@@ -22,6 +22,7 @@ function briefIssue(
     parallel: false,
     blockedByLocalIds: [],
     blockedByEpicsOnMain: [],
+    blockedByGithubIds: [],
     openBlockerIds: blockers,
     status: "open",
     references: [],

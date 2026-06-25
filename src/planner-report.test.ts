@@ -22,6 +22,7 @@ describe("printHostPlannerBaselineReport", () => {
           parallel: false,
           blockedByLocalIds: [],
           blockedByEpicsOnMain: ["aa5"],
+          blockedByGithubIds: [],
           openBlockerIds: ["epic:aa5"],
           status: "open",
           references: [],
@@ -31,7 +32,7 @@ describe("printHostPlannerBaselineReport", () => {
       hostAnalysis: {
         unblockedIssues: [],
         unblockedForCurrentEpic: [],
-        blockedIssues: [{ id: "156", epic: "aa2", openBlockerIds: ["epic:aa5"] }],
+        blockedIssues: [{ id: "156", epic: "aa2", blockedByGithubIds: [], openBlockerIds: ["epic:aa5"] }],
         waitingOnMerge: [],
         suggestedClusters: [],
         dependencyChain: [],
