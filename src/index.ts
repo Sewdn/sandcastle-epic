@@ -50,7 +50,13 @@ export {
   changedPathsBetweenRefs,
   formatAffectedValidationScope,
 } from "./affected.js";
-export { refreshDoraIndex, resolveIndexCheckoutPath } from "./dora.js";
+export {
+  hostDoraIndexCommand,
+  patchDoraConfigForHostIndex,
+  refreshDoraIndex,
+  refreshDoraIndexForRepo,
+  resolveIndexCheckoutPath,
+} from "./dora.js";
 export { maybeIntervene, recentSandcastleLogPaths, type InterventionBrief } from "./intervention.js";
 export {
   DEFAULT_PARALLEL_CLUSTER_LIMIT,
