@@ -1,8 +1,11 @@
 import { $ } from "bun";
 import { integrationBranchForEpic } from "./epics.js";
+import { discardHostCheckoutBlockers } from "./git.js";
 
 export type LongRunHandoffOptions = {
   readonly pushRemotes: boolean;
+  readonly repoRoot: string;
+  readonly sandcastleDir: string;
 };
 
 export type MergeToMainOptions = LongRunHandoffOptions & {
@@ -121,6 +124,7 @@ export async function bootstrapIntegrationBranchFromMain(
   options: MergeToMainOptions,
 ): Promise<string> {
   const integrationBranch = integrationBranchForEpic(epic);
+  await discardHostCheckoutBlockers(options.repoRoot, options.sandcastleDir);
   await ensureMainBranch(options.mainBranch);
 
   const exists =
@@ -159,6 +163,8 @@ export async function bootstrapIntegrationBranchFromEpic(
 ): Promise<string> {
   const previousBranch = integrationBranchForEpic(previousEpic);
   const nextBranch = integrationBranchForEpic(nextEpic);
+
+  await discardHostCheckoutBlockers(options.repoRoot, options.sandcastleDir);
 
   const nextExists =
     (await $`git rev-parse --verify ${nextBranch}`.quiet().nothrow()).exitCode === 0;

@@ -14,6 +14,7 @@ export {
   closeIntegratedIssue,
   closeMergedIssue,
   countCommitsAhead,
+  discardHostCheckoutBlockers,
   discardHostMergeBlockers,
   ensureIntegrationBranch,
   ensureIssueBranches,

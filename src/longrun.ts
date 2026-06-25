@@ -31,9 +31,14 @@ export type LongRunOrchestrationResult = {
   readonly finalIntegrationBranch: string | null;
 };
 
-function handoffOptions(config: LongRunOrchestrationOptions): LongRunHandoffOptions {
+function handoffOptions(
+  config: LongRunOrchestrationOptions,
+  baseConfig: EpicSandcastleConfig,
+): LongRunHandoffOptions {
   return {
     pushRemotes: config.pushRemotes,
+    repoRoot: baseConfig.repoRoot,
+    sandcastleDir: baseConfig.sandcastleDir,
   };
 }
 
@@ -60,7 +65,7 @@ async function prepareFirstEpicInChain(
     console.log(
       `  Resuming after completed ${prior}: bootstrapping ${integrationBranchForEpic(firstEpic)}…`,
     );
-    await bootstrapIntegrationBranchFromEpic(prior, firstEpic, handoffOptions(longRun));
+    await bootstrapIntegrationBranchFromEpic(prior, firstEpic, handoffOptions(longRun, baseConfig));
   }
 
   await installHostDependencies(baseConfig.repoRoot);
@@ -157,7 +162,7 @@ export async function runLongEpicOrchestration(
 
     await pushIntegrationBranchIfEnabled(
       ctx.config.integrationBranch,
-      handoffOptions(longRun),
+      handoffOptions(longRun, baseConfig),
       `\nPushing ${ctx.config.integrationBranch} (all issue merges landed)…`,
     );
 
@@ -166,7 +171,7 @@ export async function runLongEpicOrchestration(
       const previousBranch = ctx.config.integrationBranch;
       const nextBranch = integrationBranchForEpic(nextEpic);
       console.log(`\n=== Handoff: ${nextBranch} from ${previousBranch} ===\n`);
-      await bootstrapIntegrationBranchFromEpic(epic, nextEpic, handoffOptions(longRun));
+      await bootstrapIntegrationBranchFromEpic(epic, nextEpic, handoffOptions(longRun, baseConfig));
       await installHostDependencies(baseConfig.repoRoot);
     }
   }

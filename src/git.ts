@@ -1,4 +1,5 @@
 import { $ } from "bun";
+import { completedEpicsStateRelPath } from "./completed-epics.js";
 import type { EpicContext } from "./context.js";
 import { clearBranchProgress } from "./progress.js";
 import type { PlannedIssue } from "./types.js";
@@ -39,16 +40,31 @@ export async function issuesWithCommits(
 /** Host-generated paths that block merges when left dirty after bun install. */
 const HOST_MERGE_BLOCKER_PATHS = ["bun.lock"] as const;
 
-export async function discardHostMergeBlockers(repoRoot: string): Promise<void> {
-  for (const relPath of HOST_MERGE_BLOCKER_PATHS) {
+async function discardDirtyPaths(repoRoot: string, relPaths: readonly string[]): Promise<void> {
+  for (const relPath of relPaths) {
     const status = await $`git status --porcelain ${relPath}`.cwd(repoRoot).quiet().nothrow();
     if (!status.stdout.toString().trim()) {
       continue;
     }
 
-    console.log(`  Discarding local ${relPath} changes before host merge…`);
+    console.log(`  Discarding local ${relPath} changes before host git step…`);
     await $`git checkout -- ${relPath}`.cwd(repoRoot).quiet().nothrow();
   }
+}
+
+export async function discardHostMergeBlockers(repoRoot: string): Promise<void> {
+  await discardDirtyPaths(repoRoot, HOST_MERGE_BLOCKER_PATHS);
+}
+
+/** Drop ephemeral host churn (lockfile, local orchestrator state) before branch checkout. */
+export async function discardHostCheckoutBlockers(
+  repoRoot: string,
+  sandcastleDir: string,
+): Promise<void> {
+  await discardDirtyPaths(repoRoot, [
+    ...HOST_MERGE_BLOCKER_PATHS,
+    completedEpicsStateRelPath(repoRoot, sandcastleDir),
+  ]);
 }
 
 export async function currentBranchName(): Promise<string | null> {

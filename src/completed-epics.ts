@@ -9,6 +9,14 @@ type CompletedEpicsState = {
 const stateFilePath = (sandcastleDir: string) =>
   path.join(sandcastleDir, "state", "completed-epics.json");
 
+/** Repo-relative path to completed-epics state (for git checkout cleanup). */
+export function completedEpicsStateRelPath(
+  repoRoot: string,
+  sandcastleDir: string,
+): string {
+  return path.relative(repoRoot, stateFilePath(sandcastleDir)).split(path.sep).join("/");
+}
+
 function loadState(sandcastleDir: string): CompletedEpicsState {
   try {
     const raw = readFileSync(stateFilePath(sandcastleDir), "utf8");
