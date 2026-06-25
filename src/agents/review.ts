@@ -6,6 +6,7 @@ import { agentForRole } from "../agent-provider.js";
 import { clusterPromptArgs, reviewerRunName } from "../cluster/helpers.js";
 import { branchTipSha, markReviewed, shouldSkipReview } from "../progress.js";
 import { createSandboxBase } from "../sandbox.js";
+import { runSandboxAgent } from "../sandbox-agent.js";
 import type { IssueCluster, PlannedIssue } from "../types.js";
 import { affectedPackageNames, formatAffectedValidationScope } from "../affected.js";
 import { refreshDoraIndex } from "../dora.js";
@@ -100,7 +101,7 @@ export async function reviewIssues(
     if (needsReview.length === 1) {
       const issue = needsReview[0]!;
       const validationScope = await validationScopeForIssue(ctx, issue);
-      await sb.run({
+      await runSandboxAgent(sb, {
         ...agentRunConfig(ctx, { role: "reviewer", branch: needsReview[0]!.branch, name: runName }),
         maxIterations: 1,
         agent: agentForRole(ctx, "reviewer"),
@@ -114,7 +115,7 @@ export async function reviewIssues(
       });
     } else {
       const validationScope = await validationScopeForIssues(ctx, needsReview);
-      await sb.run({
+      await runSandboxAgent(sb, {
         ...agentRunConfig(ctx, { role: "reviewer", branch: needsReview[0]!.branch, name: runName }),
         maxIterations: needsReview.length,
         agent: agentForRole(ctx, "reviewer"),

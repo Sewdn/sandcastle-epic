@@ -4,6 +4,7 @@ import { agentRunConfig } from "../agent-run.js";
 import { agentForRole } from "../agent-provider.js";
 import { clusterPromptArgs } from "../cluster/helpers.js";
 import { createSandboxBase } from "../sandbox.js";
+import { runSandboxAgent } from "../sandbox-agent.js";
 import type { PlannedIssue } from "../types.js";
 import { skillsPromptArgs } from "../skills.js";
 
@@ -27,7 +28,7 @@ export async function resolveStalledBranches(
   );
 
   try {
-    await sandbox.run({
+    await runSandboxAgent(sandbox, {
       ...agentRunConfig(ctx, { role: "resolver", branch: primary.branch, name: runName }),
       maxIterations: Math.max(3, issues.length * 2),
       agent: agentForRole(ctx, "resolver"),

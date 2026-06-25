@@ -10,33 +10,33 @@ const baseConfig: EpicSandcastleConfig = {
 };
 
 describe("resolveConfig", () => {
-  test("defaults every agent role to the Cursor composer harness", () => {
+  test("defaults every agent role to the Cursor auto model", () => {
     const resolved = resolveConfig(baseConfig);
 
     expect(resolved.agents).toEqual({
-      planner: { harness: "cursor", model: "composer-2.5-fast", verboseLogging: false, skills: [] },
+      planner: { harness: "cursor", model: "auto", verboseLogging: false, skills: [] },
       implementer: {
         harness: "cursor",
-        model: "composer-2.5-fast",
+        model: "auto",
         verboseLogging: false,
         skills: [],
       },
       reviewer: {
         harness: "cursor",
-        model: "composer-2.5-fast",
+        model: "auto",
         verboseLogging: false,
         skills: [],
       },
       resolver: {
         harness: "cursor",
-        model: "composer-2.5-fast",
+        model: "auto",
         verboseLogging: false,
         skills: [],
       },
-      merger: { harness: "cursor", model: "composer-2.5-fast", verboseLogging: false, skills: [] },
+      merger: { harness: "cursor", model: "auto", verboseLogging: false, skills: [] },
       supervisor: {
         harness: "cursor",
-        model: "composer-2.5-fast",
+        model: "auto",
         verboseLogging: false,
         skills: [],
       },

@@ -3,6 +3,15 @@ import type { AgentProvider } from "@ai-hero/sandcastle";
 import type { EpicContext } from "./context.js";
 import type { AgentHarness, AgentRole } from "./types.js";
 
+function opencodeProviderEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  const apiKey = process.env.ZAI_API_KEY?.trim();
+  if (apiKey) {
+    env.ZAI_API_KEY = apiKey;
+  }
+  return env;
+}
+
 function createAgentProvider(harness: AgentHarness, model: string): AgentProvider {
   switch (harness) {
     case "cursor":
@@ -14,7 +23,7 @@ function createAgentProvider(harness: AgentHarness, model: string): AgentProvide
     case "pi":
       return sandcastle.pi(model);
     case "opencode":
-      return sandcastle.opencode(model);
+      return sandcastle.opencode(model, { env: opencodeProviderEnv() });
     case "copilot":
       return sandcastle.copilot(model);
   }

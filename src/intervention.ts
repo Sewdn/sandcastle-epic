@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import type { EpicContext } from "./context.js";
 import type { PlannedIssue } from "./types.js";
@@ -23,18 +23,22 @@ function isSupervisorDisabled(): boolean {
   return flag === "0" || flag === "false" || flag === "off";
 }
 
-function tailLogFile(logPath: string, maxLines = 120): string {
-  if (!existsSync(logPath)) {
-    return `(missing log: ${logPath})`;
+/** Paths only — supervisor reads logs in the sandbox; avoids blowing the host prompt size limit. */
+export function formatInterventionLogRefs(logPaths: readonly string[]): string {
+  if (logPaths.length === 0) {
+    return "(no Sandcastle logs found under .sandcastle/logs/)";
   }
 
-  try {
-    const contents = readFileSync(logPath, "utf8");
-    const lines = contents.split("\n");
-    return lines.slice(-maxLines).join("\n");
-  } catch (error) {
-    return `(failed to read ${logPath}: ${error})`;
-  }
+  return logPaths
+    .map((logPath, index) => {
+      const status = existsSync(logPath) ? "present" : "missing";
+      return [
+        `${index + 1}. \`${logPath}\` (${status})`,
+        `   tail: \`tail -n 60 ${logPath}\``,
+        `   errors: \`rg -n "502|Error|FAIL|AgentError|unavailable" ${logPath} | tail -30\``,
+      ].join("\n");
+    })
+    .join("\n\n");
 }
 
 /** Collect recent Sandcastle log files, newest first. */
@@ -55,16 +59,6 @@ export function recentSandcastleLogPaths(sandcastleDir: string, limit = 6): stri
     .sort((a, b) => b.mtime - a.mtime)
     .slice(0, limit)
     .map((entry) => entry.file);
-}
-
-export function formatInterventionLogExcerpt(logPaths: readonly string[]): string {
-  if (logPaths.length === 0) {
-    return "(no Sandcastle logs found)";
-  }
-
-  return logPaths
-    .map((logPath) => `### ${path.basename(logPath)}\n\n${tailLogFile(logPath)}`)
-    .join("\n\n---\n\n");
 }
 
 /** Invoke the supervisor agent when the orchestrator detects a stall or failure pattern. */

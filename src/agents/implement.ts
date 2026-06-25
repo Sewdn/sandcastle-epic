@@ -3,6 +3,7 @@ import type { EpicContext } from "../context.js";
 import { ensureIssueBranches, issuesWithCommits } from "../git.js";
 import { clusterLabel, clusterPromptArgs, implementerRunName } from "../cluster/helpers.js";
 import { createSandboxBase } from "../sandbox.js";
+import { runSandboxAgent } from "../sandbox-agent.js";
 import { agentRunConfig } from "../agent-run.js";
 import { mergeIssueBranches } from "../merge.js";
 import { resolveStalledBranches } from "./resolver.js";
@@ -42,7 +43,7 @@ export async function implementCluster(ctx: EpicContext, cluster: IssueCluster):
   try {
     if (cluster.issues.length === 1) {
       const issue = primary;
-      await sandbox.run({
+      await runSandboxAgent(sandbox, {
         ...agentRunConfig(ctx, { role: "implementer", branch: primary.branch, name: runName }),
         maxIterations: 100,
         agent: agentForRole(ctx, "implementer"),
@@ -56,7 +57,7 @@ export async function implementCluster(ctx: EpicContext, cluster: IssueCluster):
         },
       });
     } else {
-      await sandbox.run({
+      await runSandboxAgent(sandbox, {
         ...agentRunConfig(ctx, { role: "implementer", branch: primary.branch, name: runName }),
         maxIterations: 100 * cluster.issues.length,
         agent: agentForRole(ctx, "implementer"),

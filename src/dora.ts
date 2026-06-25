@@ -4,6 +4,17 @@ import { $ } from "bun";
 import type { EpicContext } from "./context.js";
 import { sandcastleWorktreesRoot } from "./worktrees.js";
 
+let doraIndexQueue: Promise<void> = Promise.resolve();
+
+function withDoraIndexLock<T>(run: () => Promise<T>): Promise<T> {
+  const task = doraIndexQueue.then(run, run);
+  doraIndexQueue = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return task;
+}
+
 type DoraConfig = {
   root: string;
   scip: string;
@@ -72,38 +83,40 @@ export async function refreshDoraIndexForRepo(
   sandcastleDir: string,
   branch?: string,
 ): Promise<void> {
-  const resolvedRepoRoot = path.resolve(repoRoot);
-  const configPath = path.join(resolvedRepoRoot, ".dora/config.json");
-  if (!existsSync(configPath)) {
-    console.log("  Skipping Dora index refresh — no .dora directory at repo root.");
-    return;
-  }
-
-  const checkout = resolveIndexCheckoutPath(resolvedRepoRoot, sandcastleDir, branch);
-  console.log(`  Refreshing shared Dora index (${branch ?? "repo root"} @ ${checkout})…`);
-
-  const original = loadDoraConfig(configPath);
-  saveDoraConfig(configPath, patchDoraConfigForHostIndex(original, resolvedRepoRoot, checkout));
-
-  try {
-    const result = await $`dora index`
-      .cwd(resolvedRepoRoot)
-      .env({ ...process.env, DORA_REPO_ROOT: resolvedRepoRoot })
-      .quiet()
-      .nothrow();
-    if (result.exitCode !== 0) {
-      const detail = result.stderr.toString().trim() || result.stdout.toString().trim();
-      throw new Error(detail || "dora index failed");
+  await withDoraIndexLock(async () => {
+    const resolvedRepoRoot = path.resolve(repoRoot);
+    const configPath = path.join(resolvedRepoRoot, ".dora/config.json");
+    if (!existsSync(configPath)) {
+      console.log("  Skipping Dora index refresh — no .dora directory at repo root.");
+      return;
     }
 
-    console.log("  Dora index refresh complete.");
-  } finally {
-    const refreshed = loadDoraConfig(configPath);
-    saveDoraConfig(configPath, {
-      ...original,
-      lastIndexed: refreshed.lastIndexed ?? original.lastIndexed,
-    });
-  }
+    const checkout = resolveIndexCheckoutPath(resolvedRepoRoot, sandcastleDir, branch);
+    console.log(`  Refreshing shared Dora index (${branch ?? "repo root"} @ ${checkout})…`);
+
+    const original = loadDoraConfig(configPath);
+    saveDoraConfig(configPath, patchDoraConfigForHostIndex(original, resolvedRepoRoot, checkout));
+
+    try {
+      const result = await $`dora index`
+        .cwd(resolvedRepoRoot)
+        .env({ ...process.env, DORA_REPO_ROOT: resolvedRepoRoot })
+        .quiet()
+        .nothrow();
+      if (result.exitCode !== 0) {
+        const detail = result.stderr.toString().trim() || result.stdout.toString().trim();
+        throw new Error(detail || "dora index failed");
+      }
+
+      console.log("  Dora index refresh complete.");
+    } finally {
+      const refreshed = loadDoraConfig(configPath);
+      saveDoraConfig(configPath, {
+        ...original,
+        lastIndexed: refreshed.lastIndexed ?? original.lastIndexed,
+      });
+    }
+  });
 }
 
 /** Refresh the shared host Dora index after code-changing agent steps. */

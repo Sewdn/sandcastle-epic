@@ -75,6 +75,7 @@ export type AgentRole =
 export type AgentHarness = "cursor" | "codex" | "claudeCode" | "pi" | "opencode" | "copilot";
 
 export const SUPPORTED_AGENT_MODELS = [
+  "auto",
   "claude-4.6-sonnet-medium-thinking",
   "claude-fable-5-thinking-high",
   "claude-opus-4-8-thinking-high",
@@ -83,9 +84,10 @@ export const SUPPORTED_AGENT_MODELS = [
   "gpt-5.3-codex-high-fast",
   "gpt-5.5-medium",
   "grok-build-0.1",
+  "zai/glm-5.2",
 ] as const;
 
-export type AgentModel = (typeof SUPPORTED_AGENT_MODELS)[number];
+export type AgentModel = (typeof SUPPORTED_AGENT_MODELS)[number] | `zai/${string}`;
 
 export type AgentHarnessConfig = {
   harness: AgentHarness;

@@ -3,7 +3,8 @@ import type { EpicContext } from "../context.js";
 import { agentRunConfig } from "../agent-run.js";
 import { agentForRole } from "../agent-provider.js";
 import { ensureIntegrationBranch } from "../git.js";
-import { formatInterventionLogExcerpt, type InterventionBrief } from "../intervention.js";
+import { formatInterventionLogRefs, type InterventionBrief } from "../intervention.js";
+import { runSandcastleAgent } from "../sandbox-agent.js";
 import { sandboxRunBase } from "../sandbox.js";
 import { skillsPromptArgs } from "../skills.js";
 
@@ -15,7 +16,7 @@ export async function runSupervisor(ctx: EpicContext, brief: InterventionBrief):
       ? brief.pendingIssues.map((issue) => `- #${issue.id} ${issue.branch}`).join("\n")
       : "(none)";
 
-  await sandcastle.run({
+  await runSandcastleAgent(sandcastle.run, {
     ...sandboxRunBase(ctx),
     ...agentRunConfig(ctx, {
       role: "supervisor",
@@ -33,7 +34,7 @@ export async function runSupervisor(ctx: EpicContext, brief: InterventionBrief):
       ITERATION: String(brief.iteration),
       MAX_ITERATIONS: String(brief.maxIterations),
       PENDING_BRANCHES: pendingSummary,
-      LOG_EXCERPT: formatInterventionLogExcerpt(brief.recentLogPaths),
+      LOG_FILES: formatInterventionLogRefs(brief.recentLogPaths),
     },
   });
 }

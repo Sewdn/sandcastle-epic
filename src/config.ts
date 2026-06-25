@@ -32,7 +32,7 @@ const AGENT_ROLES: readonly AgentRole[] = [
 
 export const DEFAULT_AGENT_CONFIG: AgentHarnessConfig = {
   harness: "cursor",
-  model: "composer-2.5-fast",
+  model: "auto",
   verboseLogging: false,
   skills: [],
 };

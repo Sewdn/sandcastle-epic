@@ -16,6 +16,22 @@ export function isDependencyManifestPath(filePath: string): boolean {
   );
 }
 
+/** Paths that exist at `ref` in git (skip new manifests not yet on integration). */
+export async function dependencyManifestPathsOnRef(
+  repoRoot: string,
+  ref: string,
+  paths: readonly string[],
+): Promise<string[]> {
+  const known: string[] = [];
+  for (const manifestPath of paths) {
+    const result = await $`git cat-file -e ${ref}:${manifestPath}`.cwd(repoRoot).quiet().nothrow();
+    if (result.exitCode === 0) {
+      known.push(manifestPath);
+    }
+  }
+  return known;
+}
+
 /** Dependency manifest paths changed on `branch` since it diverged from `base`. */
 export async function listDependencyFileChanges(
   repoRoot: string,
@@ -85,7 +101,23 @@ export async function refreshHostDependenciesForReview(
   try {
     await installHostDependencies(repoRoot);
   } finally {
-    const restore = await $`git checkout ${integrationBranch} -- ${pathList}`
+    const restorePaths = await dependencyManifestPathsOnRef(
+      repoRoot,
+      integrationBranch,
+      pathList,
+    );
+    const skipped = pathList.filter((manifestPath) => !restorePaths.includes(manifestPath));
+    if (skipped.length > 0) {
+      console.log(
+        `  Skipping restore for new manifest(s) not on ${integrationBranch}: ${skipped.join(", ")}`,
+      );
+    }
+
+    if (restorePaths.length === 0) {
+      return;
+    }
+
+    const restore = await $`git checkout ${integrationBranch} -- ${restorePaths}`
       .cwd(repoRoot)
       .quiet()
       .nothrow();
