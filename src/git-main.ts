@@ -237,7 +237,7 @@ export function buildIntegrationBranchSyncSteps(
   return steps;
 }
 
-async function branchExists(branch: string): Promise<boolean> {
+export async function integrationBranchExists(branch: string): Promise<boolean> {
   return (await $`git rev-parse --verify ${branch}`.quiet().nothrow()).exitCode === 0;
 }
 
@@ -288,7 +288,7 @@ export async function syncIntegrationBranchChain(
 
   if (options.dryRun) {
     for (const step of steps) {
-      if (!(await branchExists(step.targetBranch))) {
+      if (!(await integrationBranchExists(step.targetBranch))) {
         throw new Error(
           `Integration branch ${step.targetBranch} not found. Create it before syncing the chain.`,
         );
@@ -307,17 +307,17 @@ export async function syncIntegrationBranchChain(
   await ensureMainBranch(options.mainBranch);
 
   for (const step of steps) {
-    if (!(await branchExists(step.targetBranch))) {
+    if (!(await integrationBranchExists(step.targetBranch))) {
       throw new Error(
         `Integration branch ${step.targetBranch} not found. Create it before syncing the chain.`,
       );
     }
 
-    if (step === steps[0] && !(await branchExists(step.sourceBranch))) {
+    if (step === steps[0] && !(await integrationBranchExists(step.sourceBranch))) {
       throw new Error(`Main branch ${step.sourceBranch} not found locally or on origin.`);
     }
 
-    if (step !== steps[0] && !(await branchExists(step.sourceBranch))) {
+    if (step !== steps[0] && !(await integrationBranchExists(step.sourceBranch))) {
       throw new Error(
         `Source branch ${step.sourceBranch} not found. Complete prior epic sync steps first.`,
       );

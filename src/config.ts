@@ -17,6 +17,7 @@ const PROMPT_FILES: Record<keyof PromptPaths, string> = {
   review: "review-prompt.md",
   reviewCluster: "review-cluster-prompt.md",
   merge: "merge-prompt.md",
+  mergeIntegration: "merge-integration-prompt.md",
   resolve: "resolve-prompt.md",
   supervisor: "supervisor-prompt.md",
 };

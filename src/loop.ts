@@ -2,8 +2,13 @@ import type { EpicContext } from "./context.js";
 import { loadCanonicalEpicSequence } from "./backlog.js";
 import { ensureDockerRuntime } from "./docker.js";
 import { ensureIntegrationBranch } from "./git.js";
-import { loadProjectMapFromGithub } from "./project-map.js";
+import { buildGlobalOpenIssueAnalysis } from "./planning.js";
+import { issueCacheOptionsFromEnv } from "./issue-cache.js";
+import { printDependencyChainReport } from "./dependency-chain-report.js";
+import { dependsOnEpicsForEpic, mergeDependencyIntegrationBranches } from "./epic-handoff.js";
+import { deriveEpicWorkOrder } from "./epic-work-order.js";
 import { printProjectMapReport } from "./project-map-report.js";
+import { loadEnrichedProjectMapFromGithub } from "./project-state.js";
 import { listEpicPendingMergeIssues } from "./planning.js";
 import { implementCluster } from "./agents/implement.js";
 import { runEpicPlanner } from "./agents/planner.js";
@@ -69,17 +74,53 @@ async function runClusters(ctx: EpicContext, clusters: readonly IssueCluster[]):
 
 export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
   const canonical = loadCanonicalEpicSequence(ctx.config.repoRoot);
-  const projectMap =
-    ctx.projectMap ?? (await loadProjectMapFromGithub(canonical, [ctx.config.epic]));
+
+  let projectMap = ctx.projectMap;
+  let analysis;
+  const issueCache = issueCacheOptionsFromEnv(ctx.config.sandcastleDir);
+
+  if (projectMap) {
+    analysis = await buildGlobalOpenIssueAnalysis(ctx.config.repoRoot, projectMap, issueCache);
+  } else {
+    const loaded = await loadEnrichedProjectMapFromGithub(
+      ctx.config.repoRoot,
+      canonical,
+      [ctx.config.epic],
+      issueCache,
+    );
+    projectMap = loaded.projectMap;
+    analysis = loaded.analysis;
+  }
+
   const activeCtx: EpicContext = { ...ctx, projectMap };
 
-  if (!ctx.projectMap) {
+  if (analysis) {
+    printDependencyChainReport(analysis, projectMap, {
+      highlightEpics: [activeCtx.config.epic],
+    });
     printProjectMapReport(projectMap, {
       highlightEpics: [activeCtx.config.epic],
+      dependencyAnalysis: analysis,
     });
   }
 
   await ensureDockerRuntime(activeCtx);
+
+  if (analysis) {
+    const workOrder = deriveEpicWorkOrder(analysis, projectMap);
+    const dependsOn = dependsOnEpicsForEpic(workOrder, activeCtx.config.epic);
+    if (dependsOn.length > 0) {
+      console.log(
+        `\n=== Cross-epic integration handoff: ${dependsOn.map((epic) => `integrate/epic-${epic}`).join(", ")} → ${activeCtx.config.integrationBranch} ===\n`,
+      );
+      await mergeDependencyIntegrationBranches(activeCtx, dependsOn, {
+        pushRemotes: false,
+        repoRoot: activeCtx.config.repoRoot,
+        sandcastleDir: activeCtx.config.sandcastleDir,
+      });
+    }
+  }
+
   await ensureIntegrationBranch(activeCtx);
   await runSandcastlePreflight(activeCtx);
 
@@ -136,12 +177,6 @@ export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
     if (clusters.length === 0) {
       console.log("No unblocked agent issues to work on. Epic agent queue complete.");
       return { completed: true, reason: "no-agent-work", iterationsRun: iteration };
-    }
-
-    const issueCount = clusters.reduce((total, cluster) => total + cluster.issues.length, 0);
-    console.log(`Epic plan: ${issueCount} issue(s) in ${clusters.length} implementer run(s):`);
-    for (const cluster of clusters) {
-      console.log(`  [${clusterLabel(cluster)}]: ${cluster.reason}`);
     }
 
     await runClusters(activeCtx, clusters);

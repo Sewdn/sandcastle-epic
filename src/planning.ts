@@ -1,20 +1,46 @@
 import { $ } from "bun";
 import type { EpicContext } from "./context.js";
 import {
-  epicIssues,
   githubIdForLocalId,
   issueByLocalId,
-  loadIssueBacklog,
+  loadCanonicalEpicSequence,
+  loadMergedIssueBacklog,
   type BacklogIssue,
   type EpicMeta,
 } from "./backlog.js";
-import { countCommitsAhead, featureBranchForIssue, integrationMentionsIssue } from "./git.js";
+import {
+  countCommitsAhead,
+  countCommitsAheadOf,
+  featureBranchForIssue,
+  integrationMentionsIssueOnBranch,
+} from "./git.js";
+import { integrationBranchForEpic } from "./epics.js";
+import type { ProjectMap } from "./project-map.js";
+import {
+  analyzeOpenIssueDependencies,
+  type DependencyChainEntry,
+  type OpenIssueHostAnalysis,
+} from "./dependency-chain-report.js";
+import {
+  dependencyCacheEntryForIssue,
+  isIssueDependencyCacheValid,
+  issueCacheOptionsFromEnv,
+  loadOpenReadyForAgentIssues,
+  openIssueSetsMatch,
+  type IssueCacheOptions,
+  writeIssueDependencyCacheMap,
+} from "./issue-cache.js";
 import type { IssueCluster, PlannedIssue } from "./types.js";
 
 /** Epic-scoped pending merges that respect issue blockers (dependency order). */
 export function pendingMergeIssuesFromBrief(brief: EpicBrief): PlannedIssue[] {
   return brief.openIssues
-    .filter((issue) => issue.status === "pending_merge" && issue.openBlockerIds.length === 0)
+    .filter(
+      (issue) =>
+        issue.epic === brief.epic &&
+        issue.status === "pending_merge" &&
+        issue.openBlockerIds.length === 0,
+    )
     .map((issue) => ({ id: issue.id, title: issue.title, branch: issue.branch }))
     .sort((left, right) => Number(left.id) - Number(right.id));
 }
@@ -28,6 +54,7 @@ export type BriefIssueStatus = "open" | "integrated" | "pending_merge";
 export type BriefIssue = {
   readonly id: string;
   readonly localId: string;
+  readonly epic: string;
   readonly title: string;
   readonly branch: string;
   readonly parallel: boolean;
@@ -51,15 +78,26 @@ export type EpicBrief = {
     readonly title: string;
   }[];
   readonly integratedIssueIds: readonly string[];
+  /** All open ready-for-agent issues across epics (GitHub + backlog). */
   readonly openIssues: readonly BriefIssue[];
+  /**
+   * Next epics in canonical order that unblock when this epic completes (for planner context).
+   */
+  readonly forecastEpicsAfterActive: readonly string[];
   readonly hostAnalysis: {
     readonly unblockedIssues: readonly PlannedIssue[];
+    readonly unblockedForCurrentEpic: readonly PlannedIssue[];
     readonly blockedIssues: readonly {
       readonly id: string;
+      readonly epic: string;
       readonly openBlockerIds: readonly string[];
     }[];
     readonly waitingOnMerge: readonly string[];
     readonly suggestedClusters: readonly IssueCluster[];
+    readonly dependencyChain: readonly DependencyChainEntry[];
+    readonly readyNow: readonly DependencyChainEntry[];
+    readonly blocked: readonly DependencyChainEntry[];
+    readonly pendingMergeInChain: readonly DependencyChainEntry[];
   };
 };
 
@@ -85,86 +123,80 @@ export function branchNameForIssue(
   return `feature/${id}-${slug}`;
 }
 
-function isEpicDependencySatisfied(
+export function isEpicDependencySatisfied(
   blockerEpic: string,
   currentEpic: string,
   completedEpics: ReadonlySet<string>,
 ): boolean {
-  if (completedEpics.has(blockerEpic)) {
-    return true;
-  }
-
-  const blockerMatch = /^([a-z])(\d+)$/.exec(blockerEpic);
-  const currentMatch = /^([a-z])(\d+)$/.exec(currentEpic);
-  if (!blockerMatch || !currentMatch || blockerMatch[1] !== currentMatch[1]) {
-    return false;
-  }
-
-  return Number(blockerMatch[2]) < Number(currentMatch[2]);
+  return completedEpics.has(blockerEpic);
 }
 
+type IssueIntegrationState = {
+  readonly integratedGithubIds: ReadonlySet<string>;
+  readonly pendingMergeGithubIds: ReadonlySet<string>;
+};
+
 async function isLocalBlockerOpen(
-  ctx: EpicContext,
   blockerLocalId: string,
   lookup: ReadonlyMap<string, BacklogIssue>,
   openGithubIds: ReadonlySet<string>,
-  integratedGithubIds: ReadonlySet<string>,
-  pendingMergeIds: ReadonlySet<string>,
-): Promise<boolean> {
+  integrationState: IssueIntegrationState,
+): Promise<{ readonly open: boolean; readonly blockerId: string | null }> {
+  const blockerIssue = lookup.get(blockerLocalId);
   const githubId = githubIdForLocalId(blockerLocalId, lookup);
+  const blockerId = githubId ?? blockerLocalId;
+
   if (!githubId) {
-    return false;
+    return { open: false, blockerId: null };
   }
 
-  if (integratedGithubIds.has(githubId)) {
-    return false;
+  if (integrationState.integratedGithubIds.has(githubId)) {
+    return { open: false, blockerId: null };
   }
 
-  if (pendingMergeIds.has(githubId)) {
-    return true;
+  if (integrationState.pendingMergeGithubIds.has(githubId)) {
+    return { open: true, blockerId };
   }
 
   if (openGithubIds.has(githubId)) {
-    return true;
+    return { open: true, blockerId };
   }
 
-  return !(await integrationMentionsIssue(ctx, githubId));
+  const epic = blockerIssue?.epic;
+  if (!epic) {
+    return { open: false, blockerId: null };
+  }
+
+  if (await integrationMentionsIssueOnBranch(integrationBranchForEpic(epic), githubId)) {
+    return { open: false, blockerId: null };
+  }
+
+  return { open: true, blockerId };
 }
 
 async function resolveOpenBlockerIds(
-  ctx: EpicContext,
   issue: BacklogIssue,
   lookup: ReadonlyMap<string, BacklogIssue>,
   openGithubIds: ReadonlySet<string>,
-  integratedGithubIds: ReadonlySet<string>,
-  pendingMergeIds: ReadonlySet<string>,
-  currentEpic: string,
+  integrationState: IssueIntegrationState,
   completedEpics: ReadonlySet<string>,
 ): Promise<string[]> {
   const blockers: string[] = [];
 
   for (const localId of issue.blocked_by_issues ?? []) {
-    const githubId = githubIdForLocalId(localId, lookup);
-    if (
-      await isLocalBlockerOpen(
-        ctx,
-        localId,
-        lookup,
-        openGithubIds,
-        integratedGithubIds,
-        pendingMergeIds,
-      )
-    ) {
-      if (githubId) {
-        blockers.push(githubId);
-      } else {
-        blockers.push(localId);
-      }
+    const result = await isLocalBlockerOpen(
+      localId,
+      lookup,
+      openGithubIds,
+      integrationState,
+    );
+    if (result.open && result.blockerId) {
+      blockers.push(result.blockerId);
     }
   }
 
   for (const epic of issue.blocked_by_epics_on_main ?? []) {
-    if (!isEpicDependencySatisfied(epic, currentEpic, completedEpics)) {
+    if (!isEpicDependencySatisfied(epic, issue.epic, completedEpics)) {
       blockers.push(`epic:${epic}`);
     }
   }
@@ -182,15 +214,6 @@ function suggestClusters(
 
   const byId = new Map(briefIssues.map((issue) => [issue.id, issue]));
 
-  const parallelGroups = new Map<string, PlannedIssue[]>();
-  for (const planned of unblocked) {
-    const brief = byId.get(planned.id);
-    const key = brief?.parallel ? "parallel" : "sequential";
-    const bucket = parallelGroups.get(key) ?? [];
-    bucket.push(planned);
-    parallelGroups.set(key, bucket);
-  }
-
   return unblocked.map((issue) => {
     const brief = byId.get(issue.id);
     const parallelHint = brief?.parallel ? "marked parallel in backlog" : "sequential track";
@@ -201,21 +224,25 @@ function suggestClusters(
   });
 }
 
-async function listOpenReadyGithubIssues(
-  ctx: EpicContext,
-): Promise<readonly { readonly id: string; readonly title: string }[]> {
-  const result =
-    await $`gh issue list --state open --label ready-for-agent --label ${ctx.config.epicLabel} --limit 100 --json number,title`
-      .quiet()
-      .nothrow();
+function buildIssueIntegrationState(
+  candidates: readonly {
+    readonly id: string;
+    readonly commitsAhead: number;
+    readonly integrated: boolean;
+  }[],
+): IssueIntegrationState {
+  const integratedGithubIds = new Set<string>();
+  const pendingMergeGithubIds = new Set<string>();
 
-  if (result.exitCode !== 0) {
-    console.error(`  Failed to list open issues: ${result.stderr.toString().trim()}`);
-    return [];
+  for (const candidate of candidates) {
+    if (candidate.integrated) {
+      integratedGithubIds.add(candidate.id);
+    } else if (candidate.commitsAhead > 0) {
+      pendingMergeGithubIds.add(candidate.id);
+    }
   }
 
-  const parsed = JSON.parse(result.stdout.toString()) as Array<{ number: number; title: string }>;
-  return parsed.map((issue) => ({ id: String(issue.number), title: issue.title }));
+  return { integratedGithubIds, pendingMergeGithubIds };
 }
 
 async function integrationTipSha(integrationBranch: string): Promise<string | null> {
@@ -226,23 +253,31 @@ async function integrationTipSha(integrationBranch: string): Promise<string | nu
   return result.stdout.toString().trim() || null;
 }
 
-export async function buildEpicBrief(ctx: EpicContext): Promise<EpicBrief> {
-  const { epic, integrationBranch, epicLabel, repoRoot } = ctx.config;
-  const backlog = loadIssueBacklog(repoRoot, epic);
+/** Cross-epic open issues with YAML blockers + git integration state (no active epic required). */
+export async function buildOpenIssuesFromBacklog(
+  repoRoot: string,
+  projectMap: ProjectMap | null,
+  cacheOptions: IssueCacheOptions = {},
+  preloadedOpenReady?: Awaited<ReturnType<typeof loadOpenReadyForAgentIssues>>,
+): Promise<readonly BriefIssue[]> {
+  const backlog = loadMergedIssueBacklog(repoRoot);
   const lookup = issueByLocalId(backlog);
-  const epicMeta = backlog.epics[epic] ?? null;
-  const yamlEpicIssues = epicIssues(backlog, epic);
-  const openReady = await listOpenReadyGithubIssues(ctx);
+  const loaded = preloadedOpenReady ?? (await loadOpenReadyForAgentIssues(repoRoot, cacheOptions));
+  const openReady = loaded.issues;
   const openGithubIds = new Set(openReady.map((issue) => issue.id));
-  const completedEpics = new Set(ctx.projectMap?.completedEpics ?? []);
+  const completedEpics = new Set(projectMap?.completedEpics ?? []);
+  const useDependencyCache =
+    loaded.fromCache &&
+    loaded.cache !== null &&
+    isIssueDependencyCacheValid(loaded.cache, loaded.backlogFingerprint, cacheOptions) &&
+    openIssueSetsMatch(loaded.cache.openReadyForAgent, openReady);
 
-  const integratedIssueIds: string[] = [];
-  const pendingMerge: Array<{
-    id: string;
-    branch: string;
-    commitsAhead: number;
-    title: string;
-  }> = [];
+  if (useDependencyCache) {
+    console.log(
+      `  Using cached issue dependencies (${loaded.cache!.issueDependencies ? Object.keys(loaded.cache!.issueDependencies).length : 0} issue(s))…`,
+    );
+  }
+
   const candidates: Array<{
     yamlIssue: BacklogIssue;
     id: string;
@@ -251,26 +286,28 @@ export async function buildEpicBrief(ctx: EpicContext): Promise<EpicBrief> {
     integrated: boolean;
   }> = [];
 
-  for (const yamlIssue of yamlEpicIssues) {
+  for (const yamlIssue of backlog.issues) {
     if (yamlIssue.github === null || !openGithubIds.has(String(yamlIssue.github))) {
       continue;
     }
 
     const id = String(yamlIssue.github);
+    const issueIntegrationBranch = integrationBranchForEpic(yamlIssue.epic);
     const existingBranch = await featureBranchForIssue(id);
     const branch = branchNameForIssue(id, yamlIssue.title, existingBranch);
-    const commitsAhead = existingBranch ? await countCommitsAhead(ctx, existingBranch) : 0;
-    const integrated = commitsAhead === 0 && (await integrationMentionsIssue(ctx, id));
-
-    if (integrated) {
-      integratedIssueIds.push(id);
-    }
+    const commitsAhead = existingBranch
+      ? await countCommitsAheadOf(issueIntegrationBranch, existingBranch)
+      : 0;
+    const integrated =
+      commitsAhead === 0 &&
+      (await integrationMentionsIssueOnBranch(issueIntegrationBranch, id));
 
     candidates.push({ yamlIssue, id, branch, commitsAhead, integrated });
   }
 
-  const integratedSet = new Set(integratedIssueIds);
+  const integrationState = buildIssueIntegrationState(candidates);
   const openIssues: BriefIssue[] = [];
+  const dependencyEntries: Record<string, ReturnType<typeof dependencyCacheEntryForIssue>> = {};
 
   for (const candidate of candidates) {
     if (candidate.integrated) {
@@ -278,40 +315,113 @@ export async function buildEpicBrief(ctx: EpicContext): Promise<EpicBrief> {
     }
 
     const { yamlIssue, id, branch, commitsAhead } = candidate;
+    const cachedEntry = useDependencyCache ? loaded.cache?.issueDependencies[id] : undefined;
 
-    if (commitsAhead > 0) {
-      pendingMerge.push({
-        id,
-        branch,
-        commitsAhead,
-        title: yamlIssue.title,
-      });
-    }
+    const openBlockerIds =
+      cachedEntry?.openBlockerIds ??
+      (await resolveOpenBlockerIds(
+        yamlIssue,
+        lookup,
+        openGithubIds,
+        integrationState,
+        completedEpics,
+      ));
 
-    const pendingIds = new Set(pendingMerge.map((entry) => entry.id));
-    const openBlockerIds = await resolveOpenBlockerIds(
-      ctx,
-      yamlIssue,
-      lookup,
-      openGithubIds,
-      integratedSet,
-      pendingIds,
-      epic,
-      completedEpics,
-    );
-
-    openIssues.push({
+    const briefIssue: BriefIssue = {
       id,
       localId: yamlIssue.local_id,
+      epic: yamlIssue.epic,
       title: yamlIssue.title,
       branch,
       parallel: yamlIssue.parallel ?? false,
       blockedByLocalIds: yamlIssue.blocked_by_issues ?? [],
       blockedByEpicsOnMain: yamlIssue.blocked_by_epics_on_main ?? [],
-      openBlockerIds,
+      openBlockerIds: [...openBlockerIds],
       status: commitsAhead > 0 ? "pending_merge" : "open",
       references: yamlIssue.references ?? [],
-    });
+    };
+
+    openIssues.push(briefIssue);
+    dependencyEntries[id] = dependencyCacheEntryForIssue(briefIssue);
+  }
+
+  if (cacheOptions.sandcastleDir) {
+    writeIssueDependencyCacheMap(
+      cacheOptions.sandcastleDir,
+      loaded.backlogFingerprint,
+      openReady,
+      dependencyEntries,
+    );
+  }
+
+  return openIssues;
+}
+
+/** Deterministic cross-epic dependency analysis for all open ready-for-agent issues. */
+export async function buildGlobalOpenIssueAnalysis(
+  repoRoot: string,
+  projectMap: ProjectMap,
+  cacheOptions: IssueCacheOptions = {},
+  preloadedOpenReady?: Awaited<ReturnType<typeof loadOpenReadyForAgentIssues>>,
+): Promise<OpenIssueHostAnalysis> {
+  const openIssues = await buildOpenIssuesFromBacklog(
+    repoRoot,
+    projectMap,
+    cacheOptions,
+    preloadedOpenReady,
+  );
+  return analyzeOpenIssueDependencies(openIssues, projectMap.canonicalSequence);
+}
+
+export async function buildEpicBrief(ctx: EpicContext): Promise<EpicBrief> {
+  const { epic, integrationBranch, epicLabel, repoRoot } = ctx.config;
+  const backlog = loadMergedIssueBacklog(repoRoot);
+  const epicMeta = backlog.epics[epic] ?? null;
+  const openIssues = await buildOpenIssuesFromBacklog(
+    repoRoot,
+    ctx.projectMap,
+    issueCacheOptionsFromEnv(ctx.config.sandcastleDir),
+  );
+  const canonicalSequence =
+    ctx.projectMap?.canonicalSequence ?? loadCanonicalEpicSequence(repoRoot);
+  const dependency = analyzeOpenIssueDependencies(openIssues, canonicalSequence);
+
+  const integratedIssueIdsResolved: string[] = [];
+  const pendingMerge: Array<{
+    id: string;
+    branch: string;
+    commitsAhead: number;
+    title: string;
+  }> = [];
+
+  for (const issue of openIssues) {
+    if (issue.epic !== epic) {
+      continue;
+    }
+    if (issue.status === "pending_merge") {
+      const commitsAhead = await countCommitsAhead(ctx, issue.branch);
+      pendingMerge.push({
+        id: issue.id,
+        branch: issue.branch,
+        commitsAhead,
+        title: issue.title,
+      });
+    }
+  }
+
+  // Issues integrated on current epic branch but still open on GitHub are reconciled separately
+  for (const yamlIssue of backlog.issues) {
+    if (yamlIssue.epic !== epic || yamlIssue.github === null) {
+      continue;
+    }
+    const id = String(yamlIssue.github);
+    if (openIssues.some((issue) => issue.id === id)) {
+      continue;
+    }
+    const issueIntegrationBranch = integrationBranchForEpic(epic);
+    if (await integrationMentionsIssueOnBranch(issueIntegrationBranch, id)) {
+      integratedIssueIdsResolved.push(id);
+    }
   }
 
   const waitingOnMerge = openIssues
@@ -320,19 +430,25 @@ export async function buildEpicBrief(ctx: EpicContext): Promise<EpicBrief> {
 
   const blockedIssues = openIssues
     .filter((issue) => issue.status === "open" && issue.openBlockerIds.length > 0)
-    .map((issue) => ({ id: issue.id, openBlockerIds: issue.openBlockerIds }));
+    .map((issue) => ({
+      id: issue.id,
+      epic: issue.epic,
+      openBlockerIds: issue.openBlockerIds,
+    }));
 
-  const unblockedBrief = openIssues.filter(
-    (issue) => issue.status === "open" && issue.openBlockerIds.length === 0,
-  );
+  const unblockedIssues: PlannedIssue[] = dependency.readyNow.map((entry) => {
+    const issue = openIssues.find((item) => item.id === entry.id)!;
+    return { id: issue.id, title: issue.title, branch: issue.branch };
+  });
 
-  const unblockedIssues: PlannedIssue[] = unblockedBrief.map((issue) => ({
-    id: issue.id,
-    title: issue.title,
-    branch: issue.branch,
-  }));
+  const unblockedForCurrentEpic = unblockedIssues.filter((issue) => {
+    const briefIssue = openIssues.find((entry) => entry.id === issue.id);
+    return briefIssue?.epic === epic;
+  });
 
-  const suggestedClusters = suggestClusters(unblockedIssues, openIssues);
+  const suggestedClusters = suggestClusters(unblockedForCurrentEpic, openIssues);
+
+  const forecastEpicsAfterActive = ctx.projectMap?.forecastEpicsAfterActive ?? [];
 
   return {
     epic,
@@ -341,13 +457,19 @@ export async function buildEpicBrief(ctx: EpicContext): Promise<EpicBrief> {
     integrationTip: await integrationTipSha(integrationBranch),
     epicMeta,
     pendingMerge,
-    integratedIssueIds,
+    integratedIssueIds: integratedIssueIdsResolved,
     openIssues,
+    forecastEpicsAfterActive,
     hostAnalysis: {
       unblockedIssues,
+      unblockedForCurrentEpic,
       blockedIssues,
       waitingOnMerge,
       suggestedClusters,
+      dependencyChain: dependency.dependencyChain,
+      readyNow: dependency.readyNow,
+      blocked: dependency.blocked,
+      pendingMergeInChain: dependency.pendingMerge,
     },
   };
 }
@@ -361,6 +483,26 @@ export function filterClustersToIssues(
   allowed: readonly PlannedIssue[],
 ): IssueCluster[] {
   const allowedIds = new Set(allowed.map((issue) => issue.id));
+  const kept: IssueCluster[] = [];
+
+  for (const cluster of clusters) {
+    const issues = cluster.issues.filter((issue) => allowedIds.has(issue.id));
+    if (issues.length > 0) {
+      kept.push({ ...cluster, issues });
+    }
+  }
+
+  return kept;
+}
+
+export function filterClustersToEpic(
+  clusters: readonly IssueCluster[],
+  epic: string,
+  brief: EpicBrief,
+): IssueCluster[] {
+  const allowedIds = new Set(
+    brief.openIssues.filter((issue) => issue.epic === epic).map((issue) => issue.id),
+  );
   const kept: IssueCluster[] = [];
 
   for (const cluster of clusters) {

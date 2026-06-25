@@ -9,32 +9,25 @@ import {
   validateClusters,
 } from "../cluster/helpers.js";
 import { filterAlreadyIntegratedIssues, reconcileMergedOpenIssues } from "../reconcile.js";
-import { buildEpicBrief, filterClustersToIssues, flattenClusters } from "../planning.js";
+import {
+  printEpicPlanReport,
+  printHostPlannerBaselineReport,
+  type EpicPlanSource,
+} from "../planner-report.js";
+import {
+  buildEpicBrief,
+  filterClustersToEpic,
+  filterClustersToIssues,
+  flattenClusters,
+} from "../planning.js";
 import { sandboxRunBase } from "../sandbox.js";
 import { epicPlanSchema, type IssueCluster } from "../types.js";
 import { skillsPromptArgs } from "../skills.js";
 
-function logHostAnalysis(brief: Awaited<ReturnType<typeof buildEpicBrief>>): void {
-  console.log("\nHost epic brief:");
-  console.log(`  Integration tip: ${brief.integrationTip ?? "(unknown)"}`);
-  console.log(
-    `  Open: ${brief.openIssues.length}, integrated: ${brief.integratedIssueIds.length}, pending merge: ${brief.pendingMerge.length}`,
-  );
-  if (brief.hostAnalysis.unblockedIssues.length > 0) {
-    console.log(
-      `  Host-unblocked: ${brief.hostAnalysis.unblockedIssues.map((i) => `#${i.id}`).join(", ")}`,
-    );
-  }
-  if (brief.hostAnalysis.blockedIssues.length > 0) {
-    for (const blocked of brief.hostAnalysis.blockedIssues) {
-      console.log(`  Blocked #${blocked.id} by ${blocked.openBlockerIds.join(", ")}`);
-    }
-  }
-}
-
 async function finalizeClusters(
   ctx: EpicContext,
   clusters: readonly IssueCluster[],
+  brief: Awaited<ReturnType<typeof buildEpicBrief>>,
 ): Promise<IssueCluster[]> {
   const planned = flattenClusters(clusters);
   const filtered = await filterAlreadyIntegratedIssues(ctx, planned);
@@ -43,20 +36,31 @@ async function finalizeClusters(
   }
 
   const validated = validateClusters(filtered, clusters);
-  if (validated) {
-    return validated;
-  }
-
-  return filterClustersToIssues(clusters, filtered);
+  const resolved = validated ?? filterClustersToIssues(clusters, filtered);
+  return filterClustersToEpic(resolved, ctx.config.epic, brief);
 }
 
-function fallbackClusters(brief: Awaited<ReturnType<typeof buildEpicBrief>>): IssueCluster[] {
+function fallbackClusters(
+  brief: Awaited<ReturnType<typeof buildEpicBrief>>,
+): { readonly clusters: IssueCluster[]; readonly source: EpicPlanSource } {
   if (brief.hostAnalysis.suggestedClusters.length > 0) {
     console.warn("Planner output invalid — using host suggested clusters.");
-    return [...brief.hostAnalysis.suggestedClusters];
+    return { clusters: [...brief.hostAnalysis.suggestedClusters], source: "host-suggested" };
   }
 
-  return clustersFromIssues(brief.hostAnalysis.unblockedIssues);
+  return {
+    clusters: clustersFromIssues(brief.hostAnalysis.unblockedForCurrentEpic),
+    source: "host-fallback",
+  };
+}
+
+function publishPlan(
+  clusters: readonly IssueCluster[],
+  brief: Awaited<ReturnType<typeof buildEpicBrief>>,
+  source: EpicPlanSource,
+): IssueCluster[] {
+  printEpicPlanReport(clusters, { epicLabel: brief.epicLabel, source });
+  return [...clusters];
 }
 
 /** Unified planner: host brief + agent review of dependencies, clustering, and ordering. */
@@ -65,15 +69,18 @@ export async function runEpicPlanner(ctx: EpicContext): Promise<IssueCluster[]> 
   await reconcileMergedOpenIssues(ctx);
 
   const brief = await buildEpicBrief(ctx);
-  logHostAnalysis(brief);
+  printHostPlannerBaselineReport(brief, ctx.projectMap);
 
-  if (brief.openIssues.length === 0) {
+  const currentEpicOpen = brief.openIssues.filter((issue) => issue.epic === brief.epic);
+  if (currentEpicOpen.length === 0) {
     console.log("No open ready-for-agent issues remain for this epic.");
+    printEpicPlanReport([], { epicLabel: brief.epicLabel, source: "host-fallback" });
     return [];
   }
 
-  if (brief.hostAnalysis.unblockedIssues.length === 0 && brief.pendingMerge.length > 0) {
+  if (brief.hostAnalysis.unblockedForCurrentEpic.length === 0 && brief.pendingMerge.length > 0) {
     console.log("All open issues blocked or waiting on pending merges — skipping planner agent.");
+    printEpicPlanReport([], { epicLabel: brief.epicLabel, source: "host-fallback" });
     return [];
   }
 
@@ -97,9 +104,9 @@ export async function runEpicPlanner(ctx: EpicContext): Promise<IssueCluster[]> 
       output: sandcastle.Output.object({ tag: "plan", schema: epicPlanSchema }),
     });
 
-    const finalized = await finalizeClusters(ctx, plan.output.clusters);
+    const finalized = await finalizeClusters(ctx, plan.output.clusters, brief);
     if (finalized.length > 0) {
-      return finalized;
+      return publishPlan(finalized, brief, "planner-agent");
     }
 
     console.warn("Planner returned no actionable clusters after integration filtering.");
@@ -111,10 +118,10 @@ export async function runEpicPlanner(ctx: EpicContext): Promise<IssueCluster[]> 
       if (error.rawMatched) {
         const parsed = parseClusterOutput(error.rawMatched);
         if (parsed) {
-          const finalized = await finalizeClusters(ctx, parsed);
+          const finalized = await finalizeClusters(ctx, parsed, brief);
           if (finalized.length > 0) {
             console.warn("Recovered cluster plan from raw planner output.");
-            return finalized;
+            return publishPlan(finalized, brief, "planner-agent");
           }
         }
       }
@@ -123,11 +130,12 @@ export async function runEpicPlanner(ctx: EpicContext): Promise<IssueCluster[]> 
     }
   }
 
-  return fallbackClusters(brief);
+  const fallback = fallbackClusters(brief);
+  return publishPlan(fallback.clusters, brief, fallback.source);
 }
 
 /** @deprecated Use {@link runEpicPlanner} — returns flat unblocked issues from host brief only. */
 export async function runDependencyPlanner(ctx: EpicContext) {
   const brief = await buildEpicBrief(ctx);
-  return brief.hostAnalysis.unblockedIssues;
+  return brief.hostAnalysis.unblockedForCurrentEpic;
 }

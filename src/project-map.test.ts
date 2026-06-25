@@ -26,7 +26,9 @@ describe("project map", () => {
     expect(map.completedEpics).toEqual(["aa0"]);
     expect(map.scopedEpicsToRun).toEqual(["aa1", "aa2"]);
     expect(map.scopedEpicsSkipped).toEqual(["aa0"]);
+    expect(map.githubSuggestedEpic).toBe("aa1");
     expect(map.suggestedActiveEpic).toBe("aa1");
+    expect(map.dependencyWorkOrder).toEqual(["aa1", "aa2"]);
     expect(map.epics.find((entry) => entry.epic === "aa1")?.openReadyCount).toBe(1);
   });
 

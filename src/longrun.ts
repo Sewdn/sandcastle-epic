@@ -6,16 +6,28 @@ import { integrationBranchForEpic, parseEpicList, validateEpicSequence } from ".
 import { loadCanonicalEpicSequence, loadEpicSequenceForPhase } from "./backlog.js";
 import {
   bootstrapIntegrationBranchFromEpic,
+  integrationBranchExists,
   pushIntegrationBranchIfEnabled,
   type LongRunHandoffOptions,
 } from "./git-main.js";
+import {
+  dependsOnEpicsForEpic,
+  mergeDependencyIntegrationBranches,
+} from "./epic-handoff.js";
+import {
+  deriveEpicWorkOrder,
+  epicsToRunInDependencyOrder,
+} from "./epic-work-order.js";
+import { printProjectMapReport } from "./project-map-report.js";
+import { loadEnrichedProjectMapFromGithub } from "./project-state.js";
+import { issueCacheOptionsFromEnv } from "./issue-cache.js";
 import {
   filterEpicsFromProjectMap,
   loadProjectMapFromGithub,
   logProjectMapSummary,
   type ProjectMap,
 } from "./project-map.js";
-import { printProjectMapReport } from "./project-map-report.js";
+import { printDependencyChainReport } from "./dependency-chain-report.js";
 import { listEpicPendingMergeIssues } from "./planning.js";
 import { runEpicLoop } from "./loop.js";
 import type { EpicSandcastleConfig, LongRunSandcastleConfig } from "./types.js";
@@ -67,7 +79,7 @@ async function prepareFirstEpicInChain(
   );
   if (prior) {
     console.log(
-      `  Resuming after GitHub-complete ${prior}: bootstrapping ${integrationBranchForEpic(firstEpic)}…`,
+      `  Resuming after ${prior}: bootstrapping ${integrationBranchForEpic(firstEpic)}…`,
     );
     await bootstrapIntegrationBranchFromEpic(prior, firstEpic, handoff);
   }
@@ -81,27 +93,31 @@ export async function runLongEpicOrchestration(
 ): Promise<LongRunOrchestrationResult> {
   validateEpicSequence(longRun.epics);
 
-  let projectMap = await loadProjectMapFromGithub(
+  const issueCache = issueCacheOptionsFromEnv(baseConfig.sandcastleDir);
+
+  let { projectMap, analysis } = await loadEnrichedProjectMapFromGithub(
+    baseConfig.repoRoot,
     longRun.canonicalEpicSequence ?? longRun.epics,
     longRun.epics,
+    issueCache,
   );
 
-  const { toRun: epicsToRun, skipped: skippedEpics } = filterEpicsFromProjectMap(
-    longRun.epics,
-    projectMap,
-  );
+  const { skipped: skippedEpics } = filterEpicsFromProjectMap(longRun.epics, projectMap);
+  const epicsToRun = epicsToRunInDependencyOrder(projectMap, longRun.epics);
+
+  printDependencyChainReport(analysis, projectMap, {
+    scopedEpics: longRun.epics,
+    highlightEpics: projectMap.suggestedActiveEpic ? [projectMap.suggestedActiveEpic] : [],
+  });
 
   printProjectMapReport(projectMap, {
     scopedEpics: longRun.epics,
-    highlightEpics: epicsToRun[0] ? [epicsToRun[0]] : [],
+    highlightEpics: projectMap.suggestedActiveEpic ? [projectMap.suggestedActiveEpic] : [],
+    dependencyAnalysis: analysis,
   });
 
-  if (skippedEpics.length > 0) {
-    console.log(`Skipping GitHub-complete epic(s): ${skippedEpics.join(", ")}`);
-  }
-
   if (epicsToRun.length === 0) {
-    console.log("\nLong-run orchestration: all epics in this sequence are GitHub-complete.");
+    console.log("\nLong-run orchestration: no open ready-for-agent work remains in this sequence.");
     const lastActive =
       [...longRun.epics].reverse().find((epic) => projectMap.completedEpics.includes(epic)) ??
       null;
@@ -123,12 +139,14 @@ export async function runLongEpicOrchestration(
     console.log(`  Phase scope: ${longRun.phase}`);
   }
   console.log(
-    "  Handoff: each completed integrate/epic-* seeds the next integration branch (no merge to main).",
+    "  Handoff: dependency integration branches merge into each epic at start; visit order seeds the chain.",
   );
   console.log("  Merge to main only after manual review when the full sequence is done.");
   console.log("  Epic completion source: GitHub (no open ready-for-agent issues per epic label).");
 
   const handoff = handoffOptions(longRun, baseConfig);
+  const workOrder = deriveEpicWorkOrder(analysis, projectMap, longRun.epics);
+
   await prepareFirstEpicInChain(
     epicsToRun[0]!,
     baseConfig,
@@ -150,6 +168,14 @@ export async function runLongEpicOrchestration(
       index === 0
         ? createEpicContext({ ...baseConfig, epic, projectMap })
         : await prepareEpicStart(epic, baseConfig, projectMap);
+
+    const dependsOn = dependsOnEpicsForEpic(workOrder, epic);
+    if (dependsOn.length > 0) {
+      console.log(
+        `\n=== Cross-epic integration handoff: ${dependsOn.map(integrationBranchForEpic).join(", ")} → ${integrationBranchForEpic(epic)} ===\n`,
+      );
+      await mergeDependencyIntegrationBranches(ctx, dependsOn, handoff);
+    }
 
     const result = await runEpicLoop(ctx);
 
@@ -193,23 +219,34 @@ export async function runLongEpicOrchestration(
       `\nPushing ${ctx.config.integrationBranch} (all issue merges landed)…`,
     );
 
-    projectMap = await loadProjectMapFromGithub(
+    ({ projectMap, analysis } = await loadEnrichedProjectMapFromGithub(
+      baseConfig.repoRoot,
       longRun.canonicalEpicSequence ?? longRun.epics,
       longRun.epics,
-    );
+      { ...issueCache, forceRefresh: true },
+    ));
 
     const nextEpic = epicsToRun[index + 1];
+    printDependencyChainReport(analysis, projectMap, {
+      scopedEpics: longRun.epics,
+      highlightEpics: nextEpic ? [nextEpic] : [],
+      title: `Sandcastle dependency chain (host) — after ${epic}`,
+    });
     printProjectMapReport(projectMap, {
       scopedEpics: longRun.epics,
       highlightEpics: nextEpic ? [nextEpic] : [],
-      title: `Sandcastle project state (GitHub) — after ${epic}`,
+      dependencyAnalysis: analysis,
+      title: `Sandcastle project state — after ${epic}`,
     });
 
     if (nextEpic) {
-      const previousBranch = ctx.config.integrationBranch;
       const nextBranch = integrationBranchForEpic(nextEpic);
-      console.log(`\n=== Handoff: ${nextBranch} from ${previousBranch} ===\n`);
-      await bootstrapIntegrationBranchFromEpic(epic, nextEpic, handoff);
+      const previousBranch = ctx.config.integrationBranch;
+      console.log(`\n=== Chain handoff: ensure ${nextBranch} exists (seed from ${previousBranch}) ===\n`);
+      const nextExists = await integrationBranchExists(nextBranch);
+      if (!nextExists) {
+        await bootstrapIntegrationBranchFromEpic(epic, nextEpic, handoff);
+      }
       await installHostDependencies(baseConfig.repoRoot);
     }
   }
@@ -221,9 +258,6 @@ export async function runLongEpicOrchestration(
 
   console.log("\nLong-run orchestration finished.");
   console.log(`  Epics visited this session: ${sessionCompleted.join(", ") || "(none)"}`);
-  console.log(
-    `  GitHub-complete in scope: ${projectMap.completedEpics.filter((item) => longRun.epics.includes(item)).join(", ") || "(none)"}`,
-  );
   if (finalIntegrationBranch) {
     console.log(
       `  All work is on ${finalIntegrationBranch}. Review and merge to main manually when ready.`,
@@ -276,4 +310,12 @@ export function resolveLongRunConfig(env: {
 }
 
 export { filterEpicsFromProjectMap, loadProjectMapFromGithub, logProjectMapSummary };
-export { printProjectMapReport, type ProjectMapReportOptions } from "./project-map-report.js";
+export { loadEnrichedProjectMapFromGithub } from "./project-state.js";
+export {
+  deriveEpicWorkOrder,
+  enrichProjectMapWithDependencies,
+  epicsToRunInDependencyOrder,
+  type EpicWorkOrder,
+  type EpicWorkOrderEntry,
+} from "./epic-work-order.js";
+export { printProjectMapReport, resolveProjectMapReportSections, resolveProjectMapReportWindow, type ProjectMapReportOptions } from "./project-map-report.js";

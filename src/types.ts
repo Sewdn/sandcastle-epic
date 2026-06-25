@@ -61,6 +61,7 @@ export type PromptPaths = {
   review: string;
   reviewCluster: string;
   merge: string;
+  mergeIntegration: string;
   resolve: string;
   supervisor: string;
 };

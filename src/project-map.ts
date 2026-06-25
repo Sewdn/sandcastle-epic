@@ -1,6 +1,10 @@
 import { $ } from "bun";
 import { printProjectMapReport } from "./project-map-report.js";
 import { epicLabelForEpic, integrationBranchForEpic } from "./epics.js";
+import {
+  loadOpenReadyForAgentIssues,
+  type IssueCacheOptions,
+} from "./issue-cache.js";
 
 export type EpicProjectStatus = "complete" | "has_work";
 
@@ -24,7 +28,16 @@ export type ProjectMap = {
   readonly completedEpics: readonly string[];
   readonly scopedEpicsToRun: readonly string[];
   readonly scopedEpicsSkipped: readonly string[];
-  /** First epic in canonical order that still has open ready-for-agent work. */
+  /** Epic visit order from cross-epic dependency chain (defaults to scopedEpicsToRun until enriched). */
+  readonly dependencyWorkOrder: readonly string[];
+  /**
+   * Next epics in canonical sequence that become actionable when {@link suggestedActiveEpic}
+   * completes (depend on the active epic; other epic blockers already satisfied).
+   */
+  readonly forecastEpicsAfterActive: readonly string[];
+  /** First epic in canonical GitHub order with open ready-for-agent work. */
+  readonly githubSuggestedEpic: string | null;
+  /** Epic to work on first — dependency-derived when enriched, else GitHub-first. */
   readonly suggestedActiveEpic: string | null;
 };
 
@@ -93,7 +106,7 @@ export function buildProjectMap(
   const completedSet = new Set(completedEpics);
   const scopedEpicsToRun = scopedEpics.filter((epic) => !completedSet.has(epic));
   const scopedEpicsSkipped = scopedEpics.filter((epic) => completedSet.has(epic));
-  const suggestedActiveEpic =
+  const githubSuggestedEpic =
     epics.find((entry) => entry.status === "has_work")?.epic ?? null;
 
   return {
@@ -105,7 +118,10 @@ export function buildProjectMap(
     completedEpics,
     scopedEpicsToRun,
     scopedEpicsSkipped,
-    suggestedActiveEpic,
+    dependencyWorkOrder: scopedEpicsToRun,
+    forecastEpicsAfterActive: [],
+    githubSuggestedEpic,
+    suggestedActiveEpic: githubSuggestedEpic,
   };
 }
 
@@ -140,7 +156,14 @@ export async function fetchOpenReadyForAgentIssues(): Promise<readonly OpenReady
 export async function loadProjectMapFromGithub(
   canonicalSequence: readonly string[],
   scopedEpics: readonly string[],
+  cacheOptions: IssueCacheOptions = {},
+  repoRoot?: string,
 ): Promise<ProjectMap> {
+  if (repoRoot && cacheOptions.sandcastleDir) {
+    const loaded = await loadOpenReadyForAgentIssues(repoRoot, cacheOptions);
+    return buildProjectMap(canonicalSequence, scopedEpics, loaded.issues);
+  }
+
   const openIssues = await fetchOpenReadyForAgentIssues();
   return buildProjectMap(canonicalSequence, scopedEpics, openIssues);
 }

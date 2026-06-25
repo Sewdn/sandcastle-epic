@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { branchNameForIssue, pendingMergeIssuesFromBrief, type EpicBrief } from "./planning.js";
+import {
+  branchNameForIssue,
+  isEpicDependencySatisfied,
+  pendingMergeIssuesFromBrief,
+  type EpicBrief,
+} from "./planning.js";
 
 describe("pendingMergeIssuesFromBrief", () => {
   test("returns only unblocked pending merges in dependency order", () => {
@@ -15,6 +20,7 @@ describe("pendingMergeIssuesFromBrief", () => {
         {
           id: "105",
           localId: "A12-01",
+          epic: "a12",
           title: "[A12] first",
           branch: "feature/105-image-output-controls",
           parallel: false,
@@ -27,6 +33,7 @@ describe("pendingMergeIssuesFromBrief", () => {
         {
           id: "106",
           localId: "A12-02",
+          epic: "a12",
           title: "[A12] blocked",
           branch: "feature/106-role-labeled-reference",
           parallel: false,
@@ -37,11 +44,17 @@ describe("pendingMergeIssuesFromBrief", () => {
           references: [],
         },
       ],
+      forecastEpicsAfterActive: [],
       hostAnalysis: {
         unblockedIssues: [],
+        unblockedForCurrentEpic: [],
         blockedIssues: [],
         waitingOnMerge: [],
         suggestedClusters: [],
+        dependencyChain: [],
+        readyNow: [],
+        blocked: [],
+        pendingMergeInChain: [],
       },
     };
 
@@ -52,6 +65,15 @@ describe("pendingMergeIssuesFromBrief", () => {
         branch: "feature/105-image-output-controls",
       },
     ]);
+  });
+});
+
+describe("isEpicDependencySatisfied", () => {
+  test("requires the blocker epic to be GitHub-complete", () => {
+    expect(isEpicDependencySatisfied("aa1", "aa5", new Set())).toBe(false);
+    expect(isEpicDependencySatisfied("aa1", "aa5", new Set(["aa1"]))).toBe(true);
+    expect(isEpicDependencySatisfied("aa5", "aa2", new Set())).toBe(false);
+    expect(isEpicDependencySatisfied("aa3", "aa8", new Set())).toBe(false);
   });
 });
 

@@ -28,3 +28,27 @@ export async function mergeIssueBranchesWithAgent(
     },
   });
 }
+
+export async function mergeIntegrationBranchWithAgent(
+  ctx: EpicContext,
+  sourceBranch: string,
+  sourceEpic: string,
+): Promise<void> {
+  await sandcastle.run({
+    ...sandboxRunBase(ctx),
+    ...agentRunConfig(ctx, {
+      role: "merger",
+      branch: ctx.config.integrationBranch,
+      name: "merger-integration",
+    }),
+    maxIterations: 1,
+    agent: agentForRole(ctx, "merger"),
+    promptFile: ctx.promptFile("mergeIntegration"),
+    promptArgs: {
+      ...ctx.sharedPromptArgs,
+      ...(await skillsPromptArgs(ctx, "merger")),
+      UPSTREAM_BRANCH: sourceBranch,
+      UPSTREAM_EPIC: sourceEpic,
+    },
+  });
+}

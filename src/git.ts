@@ -4,24 +4,25 @@ import type { EpicContext } from "./context.js";
 import { clearBranchProgress } from "./progress.js";
 import type { PlannedIssue } from "./types.js";
 
-export async function countCommitsAhead(
-  ctx: EpicContext,
-  branch: string,
-  base?: string,
-): Promise<number> {
-  const integrationBranch = base ?? ctx.config.integrationBranch;
+export async function countCommitsAheadOf(base: string, branch: string): Promise<number> {
   const result = await $`git rev-parse --verify ${branch}`.quiet().nothrow();
   if (result.exitCode !== 0) {
     return 0;
   }
-  const countResult = await $`git rev-list --count ${integrationBranch}..${branch}`
-    .quiet()
-    .nothrow();
+  const countResult = await $`git rev-list --count ${base}..${branch}`.quiet().nothrow();
   if (countResult.exitCode !== 0) {
     return 0;
   }
   const count = Number(countResult.stdout.toString().trim());
   return Number.isFinite(count) ? count : 0;
+}
+
+export async function countCommitsAhead(
+  ctx: EpicContext,
+  branch: string,
+  base?: string,
+): Promise<number> {
+  return countCommitsAheadOf(base ?? ctx.config.integrationBranch, branch);
 }
 
 export async function issuesWithCommits(
@@ -202,11 +203,10 @@ export async function featureBranchForIssue(issueId: string): Promise<string | n
 }
 
 /** Whether the integration branch history references this issue (e.g. fixes #20). */
-export async function integrationMentionsIssue(
-  ctx: EpicContext,
+export async function integrationMentionsIssueOnBranch(
+  integrationBranch: string,
   issueId: string,
 ): Promise<boolean> {
-  const { integrationBranch } = ctx.config;
   const patterns = [`fixes #${issueId}`, `fix #${issueId}`];
 
   for (const pattern of patterns) {
@@ -222,6 +222,14 @@ export async function integrationMentionsIssue(
   }
 
   return false;
+}
+
+/** Whether the integration branch history references this issue (e.g. fixes #20). */
+export async function integrationMentionsIssue(
+  ctx: EpicContext,
+  issueId: string,
+): Promise<boolean> {
+  return integrationMentionsIssueOnBranch(ctx.config.integrationBranch, issueId);
 }
 
 export async function closeMergedIssue(ctx: EpicContext, issue: PlannedIssue): Promise<void> {

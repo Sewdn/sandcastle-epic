@@ -14,12 +14,14 @@ export {
   closeIntegratedIssue,
   closeMergedIssue,
   countCommitsAhead,
+  countCommitsAheadOf,
   discardHostCheckoutBlockers,
   discardHostMergeBlockers,
   ensureIntegrationBranch,
   ensureIssueBranches,
   featureBranchForIssue,
   integrationMentionsIssue,
+  integrationMentionsIssueOnBranch,
   isFastForwardMerge,
   issuesWithCommits,
   listAllLocalPendingFeatureBranches,
@@ -42,7 +44,7 @@ export {
 } from "./cluster/helpers.js";
 export { planClusters } from "./cluster/planner.js";
 export { implementCluster } from "./agents/implement.js";
-export { mergeIssueBranchesWithAgent } from "./agents/merger.js";
+export { mergeIssueBranchesWithAgent, mergeIntegrationBranchWithAgent } from "./agents/merger.js";
 export { runSupervisor } from "./agents/supervisor.js";
 export { runEpicPlanner, runDependencyPlanner } from "./agents/planner.js";
 export { reviewIssues } from "./agents/review.js";
@@ -69,7 +71,11 @@ export { SHARED_SANDBOX_MOUNTS } from "./sandbox.js";
 export {
   branchNameForIssue,
   buildEpicBrief,
+  buildGlobalOpenIssueAnalysis,
+  buildOpenIssuesFromBacklog,
+  filterClustersToEpic,
   flattenClusters,
+  isEpicDependencySatisfied,
   listEpicPendingMergeIssues,
   pendingMergeIssuesFromBrief,
   type EpicBrief,
@@ -89,6 +95,7 @@ export {
   bootstrapIntegrationBranchFromMain,
   buildIntegrationBranchSyncSteps,
   ensureMainBranch,
+  integrationBranchExists,
   mergeIntegrationBranchIntoMain,
   pushBranch,
   pushIntegrationBranchIfEnabled,
@@ -107,6 +114,7 @@ export {
   loadCanonicalEpicSequence,
   loadEpicSequenceForPhase,
   loadIssueBacklog,
+  loadMergedIssueBacklog,
   resolveEpicsDir,
   type BacklogDiscoveryOptions,
   type BacklogIssue,
@@ -120,15 +128,64 @@ export {
   loadProjectMapFromGithub,
   logProjectMapSummary,
   printProjectMapReport,
+  resolveProjectMapReportWindow,
+  resolveProjectMapReportSections,
   type LongRunOrchestrationResult,
   type ProjectMapReportOptions,
 } from "./longrun.js";
+export {
+  collapseEpicLabels,
+  collapseIssueIds,
+} from "./project-map-report.js";
+export {
+  analyzeOpenIssueDependencies,
+  orderDependencyChain,
+  printDependencyChainReport,
+  type DependencyChainEntry,
+  type DependencyChainReportOptions,
+  type OpenIssueHostAnalysis,
+} from "./dependency-chain-report.js";
+export {
+  printEpicPlanReport,
+  printHostPlannerBaselineReport,
+  type EpicPlanReportOptions,
+  type EpicPlanSource,
+  type PlannerReportOptions,
+} from "./planner-report.js";
 export {
   buildProjectMap,
   type EpicProjectEntry,
   type EpicProjectStatus,
   type ProjectMap,
 } from "./project-map.js";
+export { loadEnrichedProjectMapFromGithub } from "./project-state.js";
+export {
+  ISSUE_CACHE_DIR,
+  ISSUE_CACHE_FILENAME,
+  backlogDependencyFingerprint,
+  issueCacheMapPath,
+  issueCacheOptionsFromEnv,
+  loadIssueDependencyCacheMap,
+  resolveIssueCacheOptions,
+  type IssueCacheOptions,
+  type IssueDependencyCacheEntry,
+  type IssueDependencyCacheMap,
+} from "./issue-cache.js";
+export {
+  buildDependencyIntegrationMergeSteps,
+  dependsOnEpicsForEpic,
+  mergeDependencyIntegrationBranches,
+  type IntegrationHandoffStep,
+} from "./epic-handoff.js";
+export { printEpicWorkOrderReport, type EpicWorkOrderReportOptions } from "./epic-work-order-report.js";
+export {
+  deriveEpicWorkOrder,
+  deriveForecastEpicsAfterAnchor,
+  enrichProjectMapWithDependencies,
+  epicsToRunInDependencyOrder,
+  type EpicWorkOrder,
+  type EpicWorkOrderEntry,
+} from "./epic-work-order.js";
 export {
   clusterSchema,
   epicPlanSchema,

@@ -144,6 +144,29 @@ export function loadIssueBacklog(
   return parseBacklogFile(filePath);
 }
 
+/** Merge issue backlog YAML from all phase files (cross-epic planner + dependency chain). */
+export function loadMergedIssueBacklog(
+  repoRoot: string,
+  options: BacklogDiscoveryOptions = {},
+): IssueBacklog {
+  const files = listIssueBacklogFiles(repoRoot, options);
+  if (files.length === 0) {
+    return { version: 1, phase: "merged", epics: {}, issues: [] };
+  }
+
+  const epics: Record<string, EpicMeta> = {};
+  const issues: BacklogIssue[] = [];
+
+  for (const filePath of files) {
+    const doc = parseBacklogFile(filePath);
+    Object.assign(epics, doc.epics ?? {});
+    issues.push(...(doc.issues ?? []));
+  }
+
+  const first = parseBacklogFile(files[0]!);
+  return { version: 1, phase: files.length === 1 ? first.phase : "merged", epics, issues };
+}
+
 /** Canonical epic order from all backlog YAML files in alphabetical file order. */
 export function loadCanonicalEpicSequence(
   repoRoot: string,
