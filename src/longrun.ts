@@ -1,20 +1,20 @@
 import type { EpicContext } from "./context.js";
 import { createEpicContext } from "./context.js";
-import {
-  filterEpicsToRun,
-  loadCompletedEpics,
-  markEpicCompleted,
-  priorCompletedEpic,
-} from "./completed-epics.js";
+import { priorCompletedEpic } from "./completed-epics.js";
 import { installHostDependencies } from "./deps.js";
-import { integrationBranchForEpic } from "./epics.js";
-import { parseEpicList, validateEpicSequence } from "./epics.js";
+import { integrationBranchForEpic, parseEpicList, validateEpicSequence } from "./epics.js";
 import { loadCanonicalEpicSequence, loadEpicSequenceForPhase } from "./backlog.js";
 import {
   bootstrapIntegrationBranchFromEpic,
   pushIntegrationBranchIfEnabled,
   type LongRunHandoffOptions,
 } from "./git-main.js";
+import {
+  filterEpicsFromProjectMap,
+  loadProjectMapFromGithub,
+  logProjectMapSummary,
+  type ProjectMap,
+} from "./project-map.js";
 import { listEpicPendingMergeIssues } from "./planning.js";
 import { runEpicLoop } from "./loop.js";
 import type { EpicSandcastleConfig, LongRunSandcastleConfig } from "./types.js";
@@ -29,6 +29,7 @@ export type LongRunOrchestrationResult = {
   readonly stopReason: string | null;
   /** Tip of the integration branch chain after a successful run (null if nothing completed). */
   readonly finalIntegrationBranch: string | null;
+  readonly projectMap: ProjectMap;
 };
 
 function handoffOptions(
@@ -45,8 +46,9 @@ function handoffOptions(
 async function prepareEpicStart(
   epic: string,
   baseConfig: EpicSandcastleConfig,
+  projectMap: ProjectMap,
 ): Promise<EpicContext> {
-  return createEpicContext({ ...baseConfig, epic });
+  return createEpicContext({ ...baseConfig, epic, projectMap });
 }
 
 async function prepareFirstEpicInChain(
@@ -54,6 +56,7 @@ async function prepareFirstEpicInChain(
   baseConfig: EpicSandcastleConfig,
   longRun: LongRunOrchestrationOptions,
   completedEpics: readonly string[],
+  handoff: LongRunHandoffOptions,
 ): Promise<void> {
   const prior = priorCompletedEpic(
     firstEpic,
@@ -63,9 +66,9 @@ async function prepareFirstEpicInChain(
   );
   if (prior) {
     console.log(
-      `  Resuming after completed ${prior}: bootstrapping ${integrationBranchForEpic(firstEpic)}…`,
+      `  Resuming after GitHub-complete ${prior}: bootstrapping ${integrationBranchForEpic(firstEpic)}…`,
     );
-    await bootstrapIntegrationBranchFromEpic(prior, firstEpic, handoffOptions(longRun, baseConfig));
+    await bootstrapIntegrationBranchFromEpic(prior, firstEpic, handoff);
   }
 
   await installHostDependencies(baseConfig.repoRoot);
@@ -77,28 +80,34 @@ export async function runLongEpicOrchestration(
 ): Promise<LongRunOrchestrationResult> {
   validateEpicSequence(longRun.epics);
 
-  const sandcastleDir = baseConfig.sandcastleDir;
-  const persistedCompleted = loadCompletedEpics(sandcastleDir);
-  const { toRun: epicsToRun, skipped: skippedEpics } = filterEpicsToRun(
+  const projectMap = await loadProjectMapFromGithub(
+    longRun.canonicalEpicSequence ?? longRun.epics,
     longRun.epics,
-    sandcastleDir,
+  );
+  logProjectMapSummary(projectMap);
+
+  const { toRun: epicsToRun, skipped: skippedEpics } = filterEpicsFromProjectMap(
+    longRun.epics,
+    projectMap,
   );
 
   if (skippedEpics.length > 0) {
-    console.log(`Skipping already completed epic(s): ${skippedEpics.join(", ")}`);
+    console.log(`Skipping GitHub-complete epic(s): ${skippedEpics.join(", ")}`);
   }
 
   if (epicsToRun.length === 0) {
-    console.log("\nLong-run orchestration: all epics in this sequence are already completed.");
-    const lastCompleted =
-      [...longRun.epics].reverse().find((epic) => persistedCompleted.includes(epic)) ?? null;
+    console.log("\nLong-run orchestration: all epics in this sequence are GitHub-complete.");
+    const lastActive =
+      [...longRun.epics].reverse().find((epic) => projectMap.completedEpics.includes(epic)) ??
+      null;
     return {
       epicsRun: [],
       skippedEpics,
-      completedEpics: persistedCompleted.filter((epic) => longRun.epics.includes(epic)),
+      completedEpics: projectMap.completedEpics.filter((epic) => longRun.epics.includes(epic)),
       stoppedAt: null,
       stopReason: null,
-      finalIntegrationBranch: lastCompleted ? integrationBranchForEpic(lastCompleted) : null,
+      finalIntegrationBranch: lastActive ? integrationBranchForEpic(lastActive) : null,
+      projectMap,
     };
   }
 
@@ -112,9 +121,16 @@ export async function runLongEpicOrchestration(
     "  Handoff: each completed integrate/epic-* seeds the next integration branch (no merge to main).",
   );
   console.log("  Merge to main only after manual review when the full sequence is done.");
-  console.log(`  Completed-epic state: ${sandcastleDir}/state/completed-epics.json`);
+  console.log("  Epic completion source: GitHub (no open ready-for-agent issues per epic label).");
 
-  await prepareFirstEpicInChain(epicsToRun[0]!, baseConfig, longRun, persistedCompleted);
+  const handoff = handoffOptions(longRun, baseConfig);
+  await prepareFirstEpicInChain(
+    epicsToRun[0]!,
+    baseConfig,
+    longRun,
+    projectMap.completedEpics,
+    handoff,
+  );
 
   const sessionCompleted: string[] = [];
 
@@ -127,8 +143,8 @@ export async function runLongEpicOrchestration(
 
     const ctx =
       index === 0
-        ? createEpicContext({ ...baseConfig, epic })
-        : await prepareEpicStart(epic, baseConfig);
+        ? createEpicContext({ ...baseConfig, epic, projectMap })
+        : await prepareEpicStart(epic, baseConfig, projectMap);
 
     const result = await runEpicLoop(ctx);
 
@@ -142,23 +158,29 @@ export async function runLongEpicOrchestration(
       console.error(`\nEpic ${epic} did not complete: ${detail}.`);
       console.error("  Stopping long-run sequence.");
 
-      const allCompleted = [...persistedCompleted, ...sessionCompleted];
       return {
         epicsRun: epicsToRun.slice(0, index + 1),
         skippedEpics,
-        completedEpics: allCompleted,
+        completedEpics: projectMap.completedEpics.filter((item) => longRun.epics.includes(item)),
         stoppedAt: epic,
         stopReason: result.reason,
         finalIntegrationBranch:
-          allCompleted.length > 0
-            ? integrationBranchForEpic(allCompleted[allCompleted.length - 1]!)
+          sessionCompleted.length > 0
+            ? integrationBranchForEpic(sessionCompleted[sessionCompleted.length - 1]!)
             : ctx.config.integrationBranch,
+        projectMap,
       };
     }
 
-    markEpicCompleted(sandcastleDir, epic);
     sessionCompleted.push(epic);
-    console.log(`\nEpic ${epic} agent queue complete (recorded in completed-epics state).`);
+    const epicEntry = projectMap.epics.find((entry) => entry.epic === epic);
+    if (epicEntry?.status === "has_work") {
+      console.log(
+        `\nEpic ${epic} agent queue idle; GitHub still has ${epicEntry.openReadyCount} open ready-for-agent issue(s).`,
+      );
+    } else {
+      console.log(`\nEpic ${epic} agent queue idle; GitHub shows no remaining ready-for-agent work.`);
+    }
 
     await pushIntegrationBranchIfEnabled(
       ctx.config.integrationBranch,
@@ -171,21 +193,20 @@ export async function runLongEpicOrchestration(
       const previousBranch = ctx.config.integrationBranch;
       const nextBranch = integrationBranchForEpic(nextEpic);
       console.log(`\n=== Handoff: ${nextBranch} from ${previousBranch} ===\n`);
-      await bootstrapIntegrationBranchFromEpic(epic, nextEpic, handoffOptions(longRun, baseConfig));
+      await bootstrapIntegrationBranchFromEpic(epic, nextEpic, handoff);
       await installHostDependencies(baseConfig.repoRoot);
     }
   }
 
-  const allCompleted = [...persistedCompleted, ...sessionCompleted];
   const finalIntegrationBranch =
     sessionCompleted.length > 0
       ? integrationBranchForEpic(sessionCompleted[sessionCompleted.length - 1]!)
       : null;
 
   console.log("\nLong-run orchestration finished.");
-  console.log(`  Completed this session: ${sessionCompleted.join(", ") || "(none)"}`);
+  console.log(`  Epics visited this session: ${sessionCompleted.join(", ") || "(none)"}`);
   console.log(
-    `  All recorded completed: ${allCompleted.filter((epic) => longRun.epics.includes(epic)).join(", ") || "(none)"}`,
+    `  GitHub-complete in scope: ${projectMap.completedEpics.filter((item) => longRun.epics.includes(item)).join(", ") || "(none)"}`,
   );
   if (finalIntegrationBranch) {
     console.log(
@@ -196,10 +217,11 @@ export async function runLongEpicOrchestration(
   return {
     epicsRun: [...epicsToRun],
     skippedEpics,
-    completedEpics: allCompleted.filter((epic) => longRun.epics.includes(epic)),
+    completedEpics: projectMap.completedEpics.filter((item) => longRun.epics.includes(item)),
     stoppedAt: null,
     stopReason: null,
     finalIntegrationBranch,
+    projectMap,
   };
 }
 
@@ -236,3 +258,5 @@ export function resolveLongRunConfig(env: {
     canonicalEpicSequence: canonicalEpics,
   };
 }
+
+export { filterEpicsFromProjectMap, loadProjectMapFromGithub, logProjectMapSummary };

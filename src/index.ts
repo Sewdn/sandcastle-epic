@@ -116,8 +116,17 @@ export {
 export {
   resolveLongRunConfig,
   runLongEpicOrchestration,
+  filterEpicsFromProjectMap,
+  loadProjectMapFromGithub,
+  logProjectMapSummary,
   type LongRunOrchestrationResult,
 } from "./longrun.js";
+export {
+  buildProjectMap,
+  type EpicProjectEntry,
+  type EpicProjectStatus,
+  type ProjectMap,
+} from "./project-map.js";
 export {
   clusterSchema,
   epicPlanSchema,

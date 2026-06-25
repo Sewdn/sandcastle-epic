@@ -1,6 +1,5 @@
 import { $ } from "bun";
 import type { EpicContext } from "./context.js";
-import { countCommitsAhead, featureBranchForIssue, integrationMentionsIssue } from "./git.js";
 import {
   epicIssues,
   githubIdForLocalId,
@@ -9,7 +8,7 @@ import {
   type BacklogIssue,
   type EpicMeta,
 } from "./backlog.js";
-import { loadCompletedEpics } from "./completed-epics.js";
+import { countCommitsAhead, featureBranchForIssue, integrationMentionsIssue } from "./git.js";
 import type { IssueCluster, PlannedIssue } from "./types.js";
 
 /** Epic-scoped pending merges that respect issue blockers (dependency order). */
@@ -228,14 +227,14 @@ async function integrationTipSha(integrationBranch: string): Promise<string | nu
 }
 
 export async function buildEpicBrief(ctx: EpicContext): Promise<EpicBrief> {
-  const { epic, integrationBranch, epicLabel, repoRoot, sandcastleDir } = ctx.config;
+  const { epic, integrationBranch, epicLabel, repoRoot } = ctx.config;
   const backlog = loadIssueBacklog(repoRoot, epic);
   const lookup = issueByLocalId(backlog);
   const epicMeta = backlog.epics[epic] ?? null;
   const yamlEpicIssues = epicIssues(backlog, epic);
   const openReady = await listOpenReadyGithubIssues(ctx);
   const openGithubIds = new Set(openReady.map((issue) => issue.id));
-  const completedEpics = new Set(loadCompletedEpics(sandcastleDir));
+  const completedEpics = new Set(ctx.projectMap?.completedEpics ?? []);
 
   const integratedIssueIds: string[] = [];
   const pendingMerge: Array<{

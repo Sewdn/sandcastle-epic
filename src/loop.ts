@@ -1,6 +1,8 @@
 import type { EpicContext } from "./context.js";
+import { loadCanonicalEpicSequence } from "./backlog.js";
 import { ensureDockerRuntime } from "./docker.js";
 import { ensureIntegrationBranch } from "./git.js";
+import { loadProjectMapFromGithub } from "./project-map.js";
 import { listEpicPendingMergeIssues } from "./planning.js";
 import { implementCluster } from "./agents/implement.js";
 import { runEpicPlanner } from "./agents/planner.js";
@@ -65,21 +67,28 @@ async function runClusters(ctx: EpicContext, clusters: readonly IssueCluster[]):
 }
 
 export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
-  await ensureDockerRuntime(ctx);
-  await ensureIntegrationBranch(ctx);
-  await runSandcastlePreflight(ctx);
+  const projectMap =
+    ctx.projectMap ??
+    (await loadProjectMapFromGithub(loadCanonicalEpicSequence(ctx.config.repoRoot), [
+      ctx.config.epic,
+    ]));
+  const activeCtx: EpicContext = { ...ctx, projectMap };
+
+  await ensureDockerRuntime(activeCtx);
+  await ensureIntegrationBranch(activeCtx);
+  await runSandcastlePreflight(activeCtx);
 
   let consecutivePendingIterations = 0;
 
-  for (let iteration = 1; iteration <= ctx.config.maxIterations; iteration++) {
+  for (let iteration = 1; iteration <= activeCtx.config.maxIterations; iteration++) {
     console.log(
-      `\n=== Iteration ${iteration}/${ctx.config.maxIterations} (${ctx.config.epicLabel}) ===\n`,
+      `\n=== Iteration ${iteration}/${activeCtx.config.maxIterations} (${activeCtx.config.epicLabel}) ===\n`,
     );
 
-    await ensureDockerRuntime(ctx);
+    await ensureDockerRuntime(activeCtx);
 
-    const gateBlocked = await processPendingMergeGate(ctx);
-    const stillPending = await listEpicPendingMergeIssues(ctx);
+    const gateBlocked = await processPendingMergeGate(activeCtx);
+    const stillPending = await listEpicPendingMergeIssues(activeCtx);
     if (stillPending.length > 0) {
       consecutivePendingIterations += 1;
       console.log(
@@ -87,23 +96,23 @@ export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
       );
 
       if (consecutivePendingIterations >= 2) {
-        await maybeIntervene(ctx, {
+        await maybeIntervene(activeCtx, {
           reason: "pending-merge-stalled",
           iteration,
-          maxIterations: ctx.config.maxIterations,
+          maxIterations: activeCtx.config.maxIterations,
           pendingIssues: stillPending,
-          recentLogPaths: recentSandcastleLogPaths(ctx.config.sandcastleDir),
+          recentLogPaths: recentSandcastleLogPaths(activeCtx.config.sandcastleDir),
           detail: `${stillPending.length} branch(es) unmerged for ${consecutivePendingIterations} consecutive iteration(s).`,
         });
       }
 
-      if (iteration >= ctx.config.maxIterations - 1) {
-        await maybeIntervene(ctx, {
+      if (iteration >= activeCtx.config.maxIterations - 1) {
+        await maybeIntervene(activeCtx, {
           reason: "max-iterations-approaching",
           iteration,
-          maxIterations: ctx.config.maxIterations,
+          maxIterations: activeCtx.config.maxIterations,
           pendingIssues: stillPending,
-          recentLogPaths: recentSandcastleLogPaths(ctx.config.sandcastleDir),
+          recentLogPaths: recentSandcastleLogPaths(activeCtx.config.sandcastleDir),
           detail: `Epic loop near maxIterations with ${stillPending.length} pending merge(s).`,
         });
       }
@@ -117,7 +126,7 @@ export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
       console.log("Pending work merged — continuing to plan new issues this iteration.");
     }
 
-    const clusters = await runEpicPlanner(ctx);
+    const clusters = await runEpicPlanner(activeCtx);
 
     if (clusters.length === 0) {
       console.log("No unblocked agent issues to work on. Epic agent queue complete.");
@@ -130,36 +139,36 @@ export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
       console.log(`  [${clusterLabel(cluster)}]: ${cluster.reason}`);
     }
 
-    await runClusters(ctx, clusters);
+    await runClusters(activeCtx, clusters);
   }
 
-  const pendingAfter = await listEpicPendingMergeIssues(ctx);
+  const pendingAfter = await listEpicPendingMergeIssues(activeCtx);
   if (pendingAfter.length > 0) {
     console.log(
-      `\nEpic ${ctx.config.epicLabel} stopped: ${pendingAfter.length} branch(es) still unmerged after ${ctx.config.maxIterations} iterations.`,
+      `\nEpic ${activeCtx.config.epicLabel} stopped: ${pendingAfter.length} branch(es) still unmerged after ${activeCtx.config.maxIterations} iterations.`,
     );
-    await maybeIntervene(ctx, {
+    await maybeIntervene(activeCtx, {
       reason: "pending-merge-stalled",
-      iteration: ctx.config.maxIterations,
-      maxIterations: ctx.config.maxIterations,
+      iteration: activeCtx.config.maxIterations,
+      maxIterations: activeCtx.config.maxIterations,
       pendingIssues: pendingAfter,
-      recentLogPaths: recentSandcastleLogPaths(ctx.config.sandcastleDir),
+      recentLogPaths: recentSandcastleLogPaths(activeCtx.config.sandcastleDir),
       detail: `Epic stopped with ${pendingAfter.length} unmerged branch(es) after maxIterations.`,
     });
     return {
       completed: false,
       reason: "pending-merges",
-      iterationsRun: ctx.config.maxIterations,
+      iterationsRun: activeCtx.config.maxIterations,
     };
   }
 
   console.log(
-    `\nEpic ${ctx.config.epicLabel} stopped: reached maxIterations (${ctx.config.maxIterations}) with agent work remaining.`,
+    `\nEpic ${activeCtx.config.epicLabel} stopped: reached maxIterations (${activeCtx.config.maxIterations}) with agent work remaining.`,
   );
   return {
     completed: false,
     reason: "max-iterations",
-    iterationsRun: ctx.config.maxIterations,
+    iterationsRun: activeCtx.config.maxIterations,
   };
 }
 

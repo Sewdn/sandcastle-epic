@@ -2,6 +2,7 @@ import path from "node:path";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 import { configureHostGit, resolveConfig } from "./config.js";
 import { sandboxHooks, SHARED_SANDBOX_MOUNTS } from "./sandbox.js";
+import type { ProjectMap } from "./project-map.js";
 import type { EpicSandcastleConfig, PromptPaths, ResolvedEpicConfig } from "./types.js";
 
 const EFFECT_REFERENCE_PATH = "/home/agent/.local/share/effect-solutions/effect";
@@ -12,6 +13,7 @@ const CURSOR_SKILLS_PATH = "/home/agent/.cursor/skills";
 
 export type EpicContext = {
   readonly config: ResolvedEpicConfig;
+  readonly projectMap: ProjectMap | null;
   readonly sandboxDocker: ReturnType<typeof docker>;
   readonly hooks: typeof sandboxHooks;
   readonly sharedPromptArgs: {
@@ -76,6 +78,7 @@ export function createEpicContext(config: EpicSandcastleConfig): EpicContext {
 
   return {
     config: resolved,
+    projectMap: config.projectMap ?? null,
     sandboxDocker,
     hooks: sandboxHooks,
     sharedPromptArgs: {

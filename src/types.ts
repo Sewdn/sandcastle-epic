@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ProjectMap } from "./project-map.js";
 
 export const issueSchema = z.object({
   id: z.string(),
@@ -112,6 +113,8 @@ export type EpicSandcastleConfig = {
   /** Default and per-role agent harness/model configuration. */
   agents?: AgentConfigOverrides;
   maxIterations: number;
+  /** GitHub-derived project map — epic completion and planner context. */
+  projectMap?: ProjectMap;
   /** Override default prompt paths (repo-root-relative). */
   prompts?: Partial<PromptPaths>;
 };

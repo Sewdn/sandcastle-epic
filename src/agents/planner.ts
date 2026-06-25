@@ -92,6 +92,7 @@ export async function runEpicPlanner(ctx: EpicContext): Promise<IssueCluster[]> 
         ...ctx.sharedPromptArgs,
         ...(await skillsPromptArgs(ctx, "planner")),
         EPIC_BRIEF: JSON.stringify(brief, null, 2),
+        PROJECT_MAP: JSON.stringify(ctx.projectMap, null, 2),
       },
       output: sandcastle.Output.object({ tag: "plan", schema: epicPlanSchema }),
     });
