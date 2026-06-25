@@ -12,6 +12,18 @@ import {
 import { loadCompletedEpics } from "./completed-epics.js";
 import type { IssueCluster, PlannedIssue } from "./types.js";
 
+/** Epic-scoped pending merges that respect issue blockers (dependency order). */
+export function pendingMergeIssuesFromBrief(brief: EpicBrief): PlannedIssue[] {
+  return brief.openIssues
+    .filter((issue) => issue.status === "pending_merge" && issue.openBlockerIds.length === 0)
+    .map((issue) => ({ id: issue.id, title: issue.title, branch: issue.branch }))
+    .sort((left, right) => Number(left.id) - Number(right.id));
+}
+
+export async function listEpicPendingMergeIssues(ctx: EpicContext): Promise<PlannedIssue[]> {
+  return pendingMergeIssuesFromBrief(await buildEpicBrief(ctx));
+}
+
 export type BriefIssueStatus = "open" | "integrated" | "pending_merge";
 
 export type BriefIssue = {

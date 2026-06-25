@@ -1,6 +1,6 @@
 {
   "name": "@sewdn/sandcastle-epic",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Epic-scoped orchestration for Sandcastle — plan, implement, review, and merge GitHub issues in sequence",
   "keywords": [
     "agent",

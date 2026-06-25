@@ -1,6 +1,7 @@
 import type { EpicContext } from "./context.js";
 import { ensureDockerRuntime } from "./docker.js";
-import { ensureIntegrationBranch, listPendingMergeIssues } from "./git.js";
+import { ensureIntegrationBranch } from "./git.js";
+import { listEpicPendingMergeIssues } from "./planning.js";
 import { implementCluster } from "./agents/implement.js";
 import { runEpicPlanner } from "./agents/planner.js";
 import { clusterLabel } from "./cluster/helpers.js";
@@ -78,7 +79,7 @@ export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
     await ensureDockerRuntime(ctx);
 
     const gateBlocked = await processPendingMergeGate(ctx);
-    const stillPending = await listPendingMergeIssues(ctx);
+    const stillPending = await listEpicPendingMergeIssues(ctx);
     if (stillPending.length > 0) {
       consecutivePendingIterations += 1;
       console.log(
@@ -132,7 +133,7 @@ export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
     await runClusters(ctx, clusters);
   }
 
-  const pendingAfter = await listPendingMergeIssues(ctx);
+  const pendingAfter = await listEpicPendingMergeIssues(ctx);
   if (pendingAfter.length > 0) {
     console.log(
       `\nEpic ${ctx.config.epicLabel} stopped: ${pendingAfter.length} branch(es) still unmerged after ${ctx.config.maxIterations} iterations.`,

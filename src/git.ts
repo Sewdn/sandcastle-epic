@@ -124,7 +124,13 @@ export async function ensureIssueBranches(ctx: EpicContext, issues: PlannedIssue
   }
 }
 
-export async function listPendingMergeIssues(ctx: EpicContext): Promise<PlannedIssue[]> {
+/**
+ * @deprecated Prefer {@link listEpicPendingMergeIssues} — this scans every local
+ * `feature/*` branch and ignores epic backlog scope.
+ */
+export async function listAllLocalPendingFeatureBranches(
+  ctx: EpicContext,
+): Promise<PlannedIssue[]> {
   const pending: PlannedIssue[] = [];
 
   for (const branch of await listFeatureBranchNames()) {
@@ -143,7 +149,7 @@ export async function listPendingMergeIssues(ctx: EpicContext): Promise<PlannedI
     });
   }
 
-  return pending.sort((a, b) => Number(a.id) - Number(b.id));
+  return pending.sort((left, right) => Number(left.id) - Number(right.id));
 }
 
 export async function isFastForwardMerge(ctx: EpicContext, branch: string): Promise<boolean> {

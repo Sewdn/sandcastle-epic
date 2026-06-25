@@ -9,9 +9,9 @@ import {
   ensureIntegrationBranch,
   isFastForwardMerge,
   issuesWithCommits,
-  listPendingMergeIssues,
   mergeIssueBranchesOnHost,
 } from "./git.js";
+import { listEpicPendingMergeIssues } from "./planning.js";
 import type { PlannedIssue } from "./types.js";
 import { releaseSandcastleWorktrees } from "./worktrees.js";
 
@@ -65,13 +65,13 @@ async function tryMergePending(
     return false;
   }
 
-  const stillPending = await listPendingMergeIssues(ctx);
+  const stillPending = await listEpicPendingMergeIssues(ctx);
   return stillPending.length === 0;
 }
 
 /** Review and merge completed feature branches before planning new work. */
 export async function processPendingMergeGate(ctx: EpicContext): Promise<boolean> {
-  const pending = await listPendingMergeIssues(ctx);
+  const pending = await listEpicPendingMergeIssues(ctx);
   if (pending.length === 0) {
     return false;
   }
@@ -127,7 +127,7 @@ export async function processPendingMergeGate(ctx: EpicContext): Promise<boolean
     return true;
   }
 
-  const stillPending = await listPendingMergeIssues(ctx);
+  const stillPending = await listEpicPendingMergeIssues(ctx);
   if (stillPending.length > 0) {
     console.log("Merge still blocked — running resolver before next iteration…");
     await resolveStalledBranches(

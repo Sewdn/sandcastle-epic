@@ -1,5 +1,59 @@
 import { describe, expect, test } from "bun:test";
-import { branchNameForIssue } from "./planning.js";
+import { branchNameForIssue, pendingMergeIssuesFromBrief, type EpicBrief } from "./planning.js";
+
+describe("pendingMergeIssuesFromBrief", () => {
+  test("returns only unblocked pending merges in dependency order", () => {
+    const brief: EpicBrief = {
+      epic: "a12",
+      epicLabel: "epic:a12",
+      integrationBranch: "integrate/epic-a12",
+      integrationTip: null,
+      epicMeta: null,
+      pendingMerge: [],
+      integratedIssueIds: [],
+      openIssues: [
+        {
+          id: "105",
+          localId: "A12-01",
+          title: "[A12] first",
+          branch: "feature/105-image-output-controls",
+          parallel: false,
+          blockedByLocalIds: [],
+          blockedByEpicsOnMain: [],
+          openBlockerIds: [],
+          status: "pending_merge",
+          references: [],
+        },
+        {
+          id: "106",
+          localId: "A12-02",
+          title: "[A12] blocked",
+          branch: "feature/106-role-labeled-reference",
+          parallel: false,
+          blockedByLocalIds: ["A12-01"],
+          blockedByEpicsOnMain: [],
+          openBlockerIds: ["105"],
+          status: "pending_merge",
+          references: [],
+        },
+      ],
+      hostAnalysis: {
+        unblockedIssues: [],
+        blockedIssues: [],
+        waitingOnMerge: [],
+        suggestedClusters: [],
+      },
+    };
+
+    expect(pendingMergeIssuesFromBrief(brief)).toEqual([
+      {
+        id: "105",
+        title: "[A12] first",
+        branch: "feature/105-image-output-controls",
+      },
+    ]);
+  });
+});
 
 describe("branchNameForIssue", () => {
   test("derives deterministic slug from title", () => {

@@ -15,7 +15,7 @@ import {
   pushIntegrationBranchIfEnabled,
   type LongRunHandoffOptions,
 } from "./git-main.js";
-import { listPendingMergeIssues } from "./git.js";
+import { listEpicPendingMergeIssues } from "./planning.js";
 import { runEpicLoop } from "./loop.js";
 import type { EpicSandcastleConfig, LongRunSandcastleConfig } from "./types.js";
 
@@ -128,7 +128,7 @@ export async function runLongEpicOrchestration(
     const result = await runEpicLoop(ctx);
 
     if (!result.completed) {
-      const pending = await listPendingMergeIssues(ctx);
+      const pending = await listEpicPendingMergeIssues(ctx);
       const detail =
         result.reason === "pending-merges"
           ? `${pending.length} unmerged feature branch(es)`

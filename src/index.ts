@@ -21,7 +21,7 @@ export {
   integrationMentionsIssue,
   isFastForwardMerge,
   issuesWithCommits,
-  listPendingMergeIssues,
+  listAllLocalPendingFeatureBranches,
   mergeIssueBranchesOnHost,
   parseFeatureBranchIssueId,
 } from "./git.js";
@@ -65,7 +65,14 @@ export {
   type ParallelClusterConfig,
 } from "./parallel.js";
 export { SHARED_SANDBOX_MOUNTS } from "./sandbox.js";
-export { branchNameForIssue, buildEpicBrief, flattenClusters, type EpicBrief } from "./planning.js";
+export {
+  branchNameForIssue,
+  buildEpicBrief,
+  flattenClusters,
+  listEpicPendingMergeIssues,
+  pendingMergeIssuesFromBrief,
+  type EpicBrief,
+} from "./planning.js";
 export { mergeIssueBranches, processPendingMergeGate } from "./merge.js";
 export { runEpicLoop, runEpicLoopWithMessage, printEpicLoopComplete } from "./loop.js";
 export { runSandcastlePreflight, type SandcastlePreflightResult } from "./preflight.js";
