@@ -6,12 +6,69 @@ import { runEpicPlanner } from "./agents/planner.js";
 import { clusterLabel } from "./cluster/helpers.js";
 import { processPendingMergeGate } from "./merge.js";
 import { runSandcastlePreflight } from "./preflight.js";
-import type { EpicLoopResult } from "./types.js";
+import { maybeIntervene, recentSandcastleLogPaths } from "./intervention.js";
+import { mapWithConcurrency, resolveParallelClusterConfig } from "./parallel.js";
+import type { EpicLoopResult, IssueCluster } from "./types.js";
+
+async function handleClusterFailure(
+  ctx: EpicContext,
+  cluster: IssueCluster,
+  error: unknown,
+  mode: "parallel" | "sequential",
+): Promise<void> {
+  const branches = cluster.issues.map((i) => i.branch).join(", ");
+  console.error(`  ✗ Cluster [${clusterLabel(cluster)}] (${branches}) failed: ${error}`);
+  await maybeIntervene(ctx, {
+    reason: "cluster-implement-failed",
+    iteration: 0,
+    maxIterations: ctx.config.maxIterations,
+    pendingIssues: cluster.issues,
+    recentLogPaths: recentSandcastleLogPaths(ctx.config.sandcastleDir),
+    detail: `${mode === "parallel" ? "Parallel" : "Sequential"} cluster [${clusterLabel(cluster)}] failed: ${error}`,
+  });
+}
+
+async function runClusters(ctx: EpicContext, clusters: readonly IssueCluster[]): Promise<void> {
+  const parallel = resolveParallelClusterConfig();
+
+  if (parallel.enabled && parallel.limit > 1 && clusters.length > 1) {
+    const concurrency = Math.min(parallel.limit, clusters.length);
+    console.log(
+      `Running ${clusters.length} cluster(s) with concurrency ${concurrency} (limit ${parallel.limit})…`,
+    );
+
+    const results = await mapWithConcurrency(clusters, concurrency, async (cluster, index) => {
+      console.log(
+        `\n--- Cluster run ${index + 1}/${clusters.length} (parallel slot, max ${concurrency}) ---`,
+      );
+      await implementCluster(ctx, cluster);
+    });
+
+    for (const [index, result] of results.entries()) {
+      if (result.status === "rejected") {
+        await handleClusterFailure(ctx, clusters[index]!, result.reason, "parallel");
+      }
+    }
+
+    return;
+  }
+
+  for (const [index, cluster] of clusters.entries()) {
+    console.log(`\n--- Cluster run ${index + 1}/${clusters.length} (sequential) ---`);
+    try {
+      await implementCluster(ctx, cluster);
+    } catch (error) {
+      await handleClusterFailure(ctx, cluster, error, "sequential");
+    }
+  }
+}
 
 export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
   await ensureDockerRuntime(ctx);
   await ensureIntegrationBranch(ctx);
   await runSandcastlePreflight(ctx);
+
+  let consecutivePendingIterations = 0;
 
   for (let iteration = 1; iteration <= ctx.config.maxIterations; iteration++) {
     console.log(
@@ -23,11 +80,37 @@ export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
     const gateBlocked = await processPendingMergeGate(ctx);
     const stillPending = await listPendingMergeIssues(ctx);
     if (stillPending.length > 0) {
+      consecutivePendingIterations += 1;
       console.log(
         `${stillPending.length} branch(es) still unmerged — retry next iteration before planning new work.`,
       );
+
+      if (consecutivePendingIterations >= 2) {
+        await maybeIntervene(ctx, {
+          reason: "pending-merge-stalled",
+          iteration,
+          maxIterations: ctx.config.maxIterations,
+          pendingIssues: stillPending,
+          recentLogPaths: recentSandcastleLogPaths(ctx.config.sandcastleDir),
+          detail: `${stillPending.length} branch(es) unmerged for ${consecutivePendingIterations} consecutive iteration(s).`,
+        });
+      }
+
+      if (iteration >= ctx.config.maxIterations - 1) {
+        await maybeIntervene(ctx, {
+          reason: "max-iterations-approaching",
+          iteration,
+          maxIterations: ctx.config.maxIterations,
+          pendingIssues: stillPending,
+          recentLogPaths: recentSandcastleLogPaths(ctx.config.sandcastleDir),
+          detail: `Epic loop near maxIterations with ${stillPending.length} pending merge(s).`,
+        });
+      }
+
       continue;
     }
+
+    consecutivePendingIterations = 0;
 
     if (gateBlocked) {
       console.log("Pending work merged — continuing to plan new issues this iteration.");
@@ -46,15 +129,7 @@ export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
       console.log(`  [${clusterLabel(cluster)}]: ${cluster.reason}`);
     }
 
-    for (const [index, cluster] of clusters.entries()) {
-      console.log(`\n--- Cluster run ${index + 1}/${clusters.length} ---`);
-      try {
-        await implementCluster(ctx, cluster);
-      } catch (error) {
-        const branches = cluster.issues.map((i) => i.branch).join(", ");
-        console.error(`  ✗ Cluster [${clusterLabel(cluster)}] (${branches}) failed: ${error}`);
-      }
-    }
+    await runClusters(ctx, clusters);
   }
 
   const pendingAfter = await listPendingMergeIssues(ctx);
@@ -62,6 +137,14 @@ export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
     console.log(
       `\nEpic ${ctx.config.epicLabel} stopped: ${pendingAfter.length} branch(es) still unmerged after ${ctx.config.maxIterations} iterations.`,
     );
+    await maybeIntervene(ctx, {
+      reason: "pending-merge-stalled",
+      iteration: ctx.config.maxIterations,
+      maxIterations: ctx.config.maxIterations,
+      pendingIssues: pendingAfter,
+      recentLogPaths: recentSandcastleLogPaths(ctx.config.sandcastleDir),
+      detail: `Epic stopped with ${pendingAfter.length} unmerged branch(es) after maxIterations.`,
+    });
     return {
       completed: false,
       reason: "pending-merges",

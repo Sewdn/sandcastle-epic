@@ -7,6 +7,8 @@ import { clusterPromptArgs, reviewerRunName } from "../cluster/helpers.js";
 import { branchTipSha, markReviewed, shouldSkipReview } from "../progress.js";
 import { createSandboxBase } from "../sandbox.js";
 import type { IssueCluster, PlannedIssue } from "../types.js";
+import { affectedPackageNames, formatAffectedValidationScope } from "../affected.js";
+import { refreshDoraIndex } from "../dora.js";
 import { skillsPromptArgs } from "../skills.js";
 
 async function filterNeedsReview(
@@ -26,6 +28,32 @@ async function filterNeedsReview(
   }
 
   return { needsReview, skipped };
+}
+
+async function validationScopeForIssue(ctx: EpicContext, issue: PlannedIssue): Promise<string> {
+  const packages = await affectedPackageNames(
+    ctx.config.repoRoot,
+    ctx.config.integrationBranch,
+    issue.branch,
+  );
+  return formatAffectedValidationScope(packages);
+}
+
+async function validationScopeForIssues(
+  ctx: EpicContext,
+  issues: PlannedIssue[],
+): Promise<string> {
+  const names = new Set<string>();
+  for (const issue of issues) {
+    for (const pkg of await affectedPackageNames(
+      ctx.config.repoRoot,
+      ctx.config.integrationBranch,
+      issue.branch,
+    )) {
+      names.add(pkg);
+    }
+  }
+  return formatAffectedValidationScope([...names].sort());
 }
 
 export async function reviewIssues(
@@ -71,6 +99,7 @@ export async function reviewIssues(
   try {
     if (needsReview.length === 1) {
       const issue = needsReview[0]!;
+      const validationScope = await validationScopeForIssue(ctx, issue);
       await sb.run({
         ...agentRunConfig(ctx, { role: "reviewer", branch: needsReview[0]!.branch, name: runName }),
         maxIterations: 1,
@@ -80,9 +109,11 @@ export async function reviewIssues(
           ...ctx.sharedPromptArgs,
           ...(await skillsPromptArgs(ctx, "reviewer", [issue], plannerSkills)),
           BRANCH: issue.branch,
+          VALIDATION_SCOPE: validationScope,
         },
       });
     } else {
+      const validationScope = await validationScopeForIssues(ctx, needsReview);
       await sb.run({
         ...agentRunConfig(ctx, { role: "reviewer", branch: needsReview[0]!.branch, name: runName }),
         maxIterations: needsReview.length,
@@ -92,6 +123,7 @@ export async function reviewIssues(
           ...ctx.sharedPromptArgs,
           ...(await skillsPromptArgs(ctx, "reviewer", needsReview, plannerSkills)),
           ...clusterPromptArgs(cluster),
+          VALIDATION_SCOPE: validationScope,
         },
       });
     }
@@ -101,6 +133,7 @@ export async function reviewIssues(
       if (tip) {
         markReviewed(ctx.config.sandcastleDir, issue.branch, tip);
       }
+      await refreshDoraIndex(ctx, issue.branch);
     }
   } catch (error) {
     console.error(`  Review agent failed: ${error}`);

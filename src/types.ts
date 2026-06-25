@@ -61,9 +61,16 @@ export type PromptPaths = {
   reviewCluster: string;
   merge: string;
   resolve: string;
+  supervisor: string;
 };
 
-export type AgentRole = "planner" | "implementer" | "reviewer" | "resolver" | "merger";
+export type AgentRole =
+  | "planner"
+  | "implementer"
+  | "reviewer"
+  | "resolver"
+  | "merger"
+  | "supervisor";
 
 export type AgentHarness = "cursor" | "codex" | "claudeCode" | "pi" | "opencode" | "copilot";
 

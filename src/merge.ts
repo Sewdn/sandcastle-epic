@@ -3,6 +3,7 @@ import { resolveStalledBranches } from "./agents/resolver.js";
 import { mergeIssueBranchesWithAgent } from "./agents/merger.js";
 import { reviewIssues } from "./agents/review.js";
 import { reconcileHostDependencies } from "./deps.js";
+import { refreshDoraIndex } from "./dora.js";
 import {
   countCommitsAhead,
   ensureIntegrationBranch,
@@ -40,6 +41,8 @@ export async function mergeIssueBranches(ctx: EpicContext, issues: PlannedIssue[
       console.log(`  Agent merge: ${issue.branch}…`);
       await mergeIssueBranchesWithAgent(ctx, [issue]);
     }
+
+    await refreshDoraIndex(ctx, ctx.config.integrationBranch);
   }
 }
 

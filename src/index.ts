@@ -42,8 +42,23 @@ export {
 export { planClusters } from "./cluster/planner.js";
 export { implementCluster } from "./agents/implement.js";
 export { mergeIssueBranchesWithAgent } from "./agents/merger.js";
+export { runSupervisor } from "./agents/supervisor.js";
 export { runEpicPlanner, runDependencyPlanner } from "./agents/planner.js";
 export { reviewIssues } from "./agents/review.js";
+export {
+  affectedPackageNames,
+  changedPathsBetweenRefs,
+  formatAffectedValidationScope,
+} from "./affected.js";
+export { refreshDoraIndex, resolveIndexCheckoutPath } from "./dora.js";
+export { maybeIntervene, recentSandcastleLogPaths, type InterventionBrief } from "./intervention.js";
+export {
+  DEFAULT_PARALLEL_CLUSTER_LIMIT,
+  mapWithConcurrency,
+  resolveParallelClusterConfig,
+  type ParallelClusterConfig,
+} from "./parallel.js";
+export { SHARED_SANDBOX_MOUNTS } from "./sandbox.js";
 export { branchNameForIssue, buildEpicBrief, flattenClusters, type EpicBrief } from "./planning.js";
 export { mergeIssueBranches, processPendingMergeGate } from "./merge.js";
 export { runEpicLoop, runEpicLoopWithMessage, printEpicLoopComplete } from "./loop.js";

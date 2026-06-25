@@ -10,6 +10,7 @@ import { reviewIssues } from "./review.js";
 import type { IssueCluster, PlannedIssue } from "../types.js";
 import { agentForRole } from "../agent-provider.js";
 import { reconcileHostDependencies } from "../deps.js";
+import { refreshDoraIndex } from "../dora.js";
 import { skillsPromptArgs } from "../skills.js";
 
 export async function implementCluster(ctx: EpicContext, cluster: IssueCluster): Promise<void> {
@@ -78,6 +79,10 @@ export async function implementCluster(ctx: EpicContext, cluster: IssueCluster):
     }
   } finally {
     await sandbox.close();
+  }
+
+  for (const issue of cluster.issues) {
+    await refreshDoraIndex(ctx, issue.branch);
   }
 
   let ready: PlannedIssue[];

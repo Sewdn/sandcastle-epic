@@ -34,6 +34,12 @@ describe("resolveConfig", () => {
         skills: [],
       },
       merger: { harness: "cursor", model: "composer-2.5-fast", verboseLogging: false, skills: [] },
+      supervisor: {
+        harness: "cursor",
+        model: "composer-2.5-fast",
+        verboseLogging: false,
+        skills: [],
+      },
     });
   });
 

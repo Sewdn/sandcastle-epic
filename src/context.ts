@@ -1,6 +1,7 @@
+import path from "node:path";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 import { configureHostGit, resolveConfig } from "./config.js";
-import { sandboxHooks } from "./sandbox.js";
+import { sandboxHooks, SHARED_SANDBOX_MOUNTS } from "./sandbox.js";
 import type { EpicSandcastleConfig, PromptPaths, ResolvedEpicConfig } from "./types.js";
 
 const EFFECT_REFERENCE_PATH = "/home/agent/.local/share/effect-solutions/effect";
@@ -20,12 +21,21 @@ export type EpicContext = {
   promptFile(key: keyof PromptPaths): string;
 };
 
+function sharedRepoMounts(repoRoot: string) {
+  return SHARED_SANDBOX_MOUNTS.map((segment) => ({
+    hostPath: path.join(repoRoot, segment),
+    sandboxPath: `/home/agent/workspace/${segment}`,
+    readonly: segment === "node_modules",
+  }));
+}
+
 export function createEpicContext(config: EpicSandcastleConfig): EpicContext {
   const resolved = resolveConfig(config);
 
   const sandboxDocker = docker({
     imageName: resolved.sandboxImage,
     mounts: [
+      ...sharedRepoMounts(resolved.repoRoot),
       {
         hostPath: "~/.local/share/effect-solutions/effect",
         sandboxPath: EFFECT_REFERENCE_PATH,

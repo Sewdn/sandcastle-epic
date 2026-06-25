@@ -6,7 +6,7 @@ import { materializeLinkedPackages, pruneBrokenSymlinks } from "./deps-materiali
 const SVC_PRISMA_DIR = "packages/svc-prisma";
 const LOCKFILE_UPDATE_MESSAGE = "chore(sandcastle): refresh lockfile after merge";
 
-/** Regenerate Prisma client for the host platform after Linux sandbox node_modules copies. */
+/** Regenerate Prisma client for the host platform after sandbox node_modules bind-mount. */
 async function regenerateHostPrismaClient(repoRoot: string): Promise<void> {
   const prismaDir = path.join(repoRoot, SVC_PRISMA_DIR);
   const schemaPath = path.join(prismaDir, "prisma", "schema.prisma");
@@ -24,7 +24,7 @@ async function regenerateHostPrismaClient(repoRoot: string): Promise<void> {
 
 /** Refresh host node_modules and native Prisma engines after sandbox work. */
 export async function installHostDependencies(repoRoot: string): Promise<void> {
-  console.log("  Running host bun install (feeds sandbox node_modules copy)…");
+  console.log("  Running host bun install (shared sandbox node_modules mount)…");
   const result = await $`bun install --ignore-scripts`.cwd(repoRoot).quiet().nothrow();
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString().trim();
@@ -38,7 +38,7 @@ export async function installHostDependencies(repoRoot: string): Promise<void> {
 
   const materialized = materializeLinkedPackages(repoRoot);
   if (materialized.length > 0) {
-    console.log(`  Materialized linked package(s) for sandbox copy: ${materialized.join(", ")}`);
+    console.log(`  Materialized linked package(s) for sandbox mount: ${materialized.join(", ")}`);
   }
 
   await regenerateHostPrismaClient(repoRoot);

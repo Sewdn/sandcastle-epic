@@ -18,6 +18,7 @@ const PROMPT_FILES: Record<keyof PromptPaths, string> = {
   reviewCluster: "review-cluster-prompt.md",
   merge: "merge-prompt.md",
   resolve: "resolve-prompt.md",
+  supervisor: "supervisor-prompt.md",
 };
 
 const AGENT_ROLES: readonly AgentRole[] = [
@@ -26,6 +27,7 @@ const AGENT_ROLES: readonly AgentRole[] = [
   "reviewer",
   "resolver",
   "merger",
+  "supervisor",
 ];
 
 export const DEFAULT_AGENT_CONFIG: AgentHarnessConfig = {
