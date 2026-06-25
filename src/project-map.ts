@@ -1,4 +1,5 @@
 import { $ } from "bun";
+import { printProjectMapReport } from "./project-map-report.js";
 import { epicLabelForEpic, integrationBranchForEpic } from "./epics.js";
 
 export type EpicProjectStatus = "complete" | "has_work";
@@ -145,19 +146,5 @@ export async function loadProjectMapFromGithub(
 }
 
 export function logProjectMapSummary(projectMap: ProjectMap): void {
-  console.log("\nProject map (GitHub source of truth):");
-  console.log(`  Suggested active epic: ${projectMap.suggestedActiveEpic ?? "(none — all complete in scope)"}`);
-  console.log(`  GitHub-complete epics: ${projectMap.completedEpics.join(", ") || "(none)"}`);
-
-  const withWork = projectMap.epics.filter((entry) => entry.status === "has_work");
-  if (withWork.length === 0) {
-    console.log("  Open ready-for-agent work: none across canonical sequence");
-    return;
-  }
-
-  console.log("  Open ready-for-agent work by epic:");
-  for (const entry of withWork) {
-    const issues = entry.openReadyForAgent.map((issue) => `#${issue.id}`).join(", ");
-    console.log(`    ${entry.epic} (${entry.openReadyCount}): ${issues}`);
-  }
+  printProjectMapReport(projectMap, { scopedEpics: projectMap.scopedEpics });
 }

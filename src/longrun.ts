@@ -15,6 +15,7 @@ import {
   logProjectMapSummary,
   type ProjectMap,
 } from "./project-map.js";
+import { printProjectMapReport } from "./project-map-report.js";
 import { listEpicPendingMergeIssues } from "./planning.js";
 import { runEpicLoop } from "./loop.js";
 import type { EpicSandcastleConfig, LongRunSandcastleConfig } from "./types.js";
@@ -80,16 +81,20 @@ export async function runLongEpicOrchestration(
 ): Promise<LongRunOrchestrationResult> {
   validateEpicSequence(longRun.epics);
 
-  const projectMap = await loadProjectMapFromGithub(
+  let projectMap = await loadProjectMapFromGithub(
     longRun.canonicalEpicSequence ?? longRun.epics,
     longRun.epics,
   );
-  logProjectMapSummary(projectMap);
 
   const { toRun: epicsToRun, skipped: skippedEpics } = filterEpicsFromProjectMap(
     longRun.epics,
     projectMap,
   );
+
+  printProjectMapReport(projectMap, {
+    scopedEpics: longRun.epics,
+    highlightEpics: epicsToRun[0] ? [epicsToRun[0]] : [],
+  });
 
   if (skippedEpics.length > 0) {
     console.log(`Skipping GitHub-complete epic(s): ${skippedEpics.join(", ")}`);
@@ -188,7 +193,18 @@ export async function runLongEpicOrchestration(
       `\nPushing ${ctx.config.integrationBranch} (all issue merges landed)…`,
     );
 
+    projectMap = await loadProjectMapFromGithub(
+      longRun.canonicalEpicSequence ?? longRun.epics,
+      longRun.epics,
+    );
+
     const nextEpic = epicsToRun[index + 1];
+    printProjectMapReport(projectMap, {
+      scopedEpics: longRun.epics,
+      highlightEpics: nextEpic ? [nextEpic] : [],
+      title: `Sandcastle project state (GitHub) — after ${epic}`,
+    });
+
     if (nextEpic) {
       const previousBranch = ctx.config.integrationBranch;
       const nextBranch = integrationBranchForEpic(nextEpic);
@@ -260,3 +276,4 @@ export function resolveLongRunConfig(env: {
 }
 
 export { filterEpicsFromProjectMap, loadProjectMapFromGithub, logProjectMapSummary };
+export { printProjectMapReport, type ProjectMapReportOptions } from "./project-map-report.js";

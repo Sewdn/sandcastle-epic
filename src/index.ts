@@ -119,7 +119,9 @@ export {
   filterEpicsFromProjectMap,
   loadProjectMapFromGithub,
   logProjectMapSummary,
+  printProjectMapReport,
   type LongRunOrchestrationResult,
+  type ProjectMapReportOptions,
 } from "./longrun.js";
 export {
   buildProjectMap,

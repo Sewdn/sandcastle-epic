@@ -3,6 +3,7 @@ import { loadCanonicalEpicSequence } from "./backlog.js";
 import { ensureDockerRuntime } from "./docker.js";
 import { ensureIntegrationBranch } from "./git.js";
 import { loadProjectMapFromGithub } from "./project-map.js";
+import { printProjectMapReport } from "./project-map-report.js";
 import { listEpicPendingMergeIssues } from "./planning.js";
 import { implementCluster } from "./agents/implement.js";
 import { runEpicPlanner } from "./agents/planner.js";
@@ -67,12 +68,16 @@ async function runClusters(ctx: EpicContext, clusters: readonly IssueCluster[]):
 }
 
 export async function runEpicLoop(ctx: EpicContext): Promise<EpicLoopResult> {
+  const canonical = loadCanonicalEpicSequence(ctx.config.repoRoot);
   const projectMap =
-    ctx.projectMap ??
-    (await loadProjectMapFromGithub(loadCanonicalEpicSequence(ctx.config.repoRoot), [
-      ctx.config.epic,
-    ]));
+    ctx.projectMap ?? (await loadProjectMapFromGithub(canonical, [ctx.config.epic]));
   const activeCtx: EpicContext = { ...ctx, projectMap };
+
+  if (!ctx.projectMap) {
+    printProjectMapReport(projectMap, {
+      highlightEpics: [activeCtx.config.epic],
+    });
+  }
 
   await ensureDockerRuntime(activeCtx);
   await ensureIntegrationBranch(activeCtx);

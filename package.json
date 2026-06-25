@@ -1,6 +1,6 @@
 {
   "name": "@sewdn/sandcastle-epic",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "Epic-scoped orchestration for Sandcastle — plan, implement, review, and merge GitHub issues in sequence",
   "keywords": [
     "agent",
@@ -38,6 +38,8 @@
   },
   "dependencies": {
     "@ai-hero/sandcastle": "^0.10.0",
+    "chalk": "^5.4.1",
+    "cli-table3": "^0.6.5",
     "yaml": "^2.8.1",
     "zod": "^4.4.3"
   },
