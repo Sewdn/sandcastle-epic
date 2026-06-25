@@ -6,6 +6,98 @@ import { materializeLinkedPackages, pruneBrokenSymlinks } from "./deps-materiali
 const SVC_PRISMA_DIR = "packages/svc-prisma";
 const LOCKFILE_UPDATE_MESSAGE = "chore(sandcastle): refresh lockfile after merge";
 
+/** Paths that affect the shared host node_modules mount when changed on a feature branch. */
+export function isDependencyManifestPath(filePath: string): boolean {
+  return (
+    filePath === "bun.lock" ||
+    filePath === "package.json" ||
+    /^packages\/[^/]+\/package\.json$/.test(filePath) ||
+    /^apps\/[^/]+\/package\.json$/.test(filePath)
+  );
+}
+
+/** Dependency manifest paths changed on `branch` since it diverged from `base`. */
+export async function listDependencyFileChanges(
+  repoRoot: string,
+  base: string,
+  branch: string,
+): Promise<string[]> {
+  const result = await $`git diff --name-only ${base}...${branch}`.cwd(repoRoot).quiet().nothrow();
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.toString().trim();
+    throw new Error(
+      `Failed to diff dependency files for ${branch}${stderr ? `: ${stderr}` : ""}`,
+    );
+  }
+
+  return result.stdout
+    .toString()
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && isDependencyManifestPath(line));
+}
+
+/**
+ * After implement, refresh host node_modules from feature-branch manifests so review sandboxes
+ * can import newly added packages. Restores integration-branch manifest files afterward.
+ */
+export async function refreshHostDependenciesForReview(
+  repoRoot: string,
+  integrationBranch: string,
+  branches: readonly string[],
+): Promise<void> {
+  const paths = new Set<string>();
+  for (const branch of branches) {
+    for (const manifestPath of await listDependencyFileChanges(
+      repoRoot,
+      integrationBranch,
+      branch,
+    )) {
+      paths.add(manifestPath);
+    }
+  }
+
+  if (paths.size === 0) {
+    return;
+  }
+
+  const pathList = [...paths].sort();
+  console.log(
+    `  Feature branch(es) changed dependency manifests — refreshing host node_modules for review…`,
+  );
+  console.log(`    ${pathList.join(", ")}`);
+
+  for (const branch of branches) {
+    const branchPaths = await listDependencyFileChanges(repoRoot, integrationBranch, branch);
+    if (branchPaths.length === 0) {
+      continue;
+    }
+
+    const checkout = await $`git checkout ${branch} -- ${branchPaths}`.cwd(repoRoot).quiet().nothrow();
+    if (checkout.exitCode !== 0) {
+      const stderr = checkout.stderr.toString().trim();
+      throw new Error(
+        `Failed to checkout dependency manifests from ${branch}${stderr ? `: ${stderr}` : ""}`,
+      );
+    }
+  }
+
+  try {
+    await installHostDependencies(repoRoot);
+  } finally {
+    const restore = await $`git checkout ${integrationBranch} -- ${pathList}`
+      .cwd(repoRoot)
+      .quiet()
+      .nothrow();
+    if (restore.exitCode !== 0) {
+      const stderr = restore.stderr.toString().trim();
+      console.warn(
+        `  Warning: failed to restore integration dependency manifests${stderr ? `: ${stderr}` : ""}`,
+      );
+    }
+  }
+}
+
 /** Regenerate Prisma client for the host platform after sandbox node_modules bind-mount. */
 async function regenerateHostPrismaClient(repoRoot: string): Promise<void> {
   const prismaDir = path.join(repoRoot, SVC_PRISMA_DIR);

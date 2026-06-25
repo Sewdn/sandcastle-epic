@@ -9,7 +9,7 @@ import { resolveStalledBranches } from "./resolver.js";
 import { reviewIssues } from "./review.js";
 import type { IssueCluster, PlannedIssue } from "../types.js";
 import { agentForRole } from "../agent-provider.js";
-import { reconcileHostDependencies } from "../deps.js";
+import { reconcileHostDependencies, refreshHostDependenciesForReview } from "../deps.js";
 import { refreshDoraIndex } from "../dora.js";
 import { skillsPromptArgs } from "../skills.js";
 
@@ -83,6 +83,16 @@ export async function implementCluster(ctx: EpicContext, cluster: IssueCluster):
 
   for (const issue of cluster.issues) {
     await refreshDoraIndex(ctx, issue.branch);
+  }
+
+  try {
+    await refreshHostDependenciesForReview(
+      ctx.config.repoRoot,
+      ctx.config.integrationBranch,
+      cluster.issues.map((issue) => issue.branch),
+    );
+  } catch (error) {
+    console.error(`  Host dependency refresh before review failed: ${error}`);
   }
 
   let ready: PlannedIssue[];
