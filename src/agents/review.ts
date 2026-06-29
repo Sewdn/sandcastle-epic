@@ -6,7 +6,7 @@ import { agentForRole } from "../agent-provider.js";
 import { clusterPromptArgs, reviewerRunName } from "../cluster/helpers.js";
 import { branchTipSha, markReviewed, shouldSkipReview } from "../progress.js";
 import { createSandboxBase } from "../sandbox.js";
-import { runSandboxAgent } from "../sandbox-agent.js";
+import { runCaptureFor, runSandboxAgent } from "../sandbox-agent.js";
 import type { IssueCluster, PlannedIssue } from "../types.js";
 import { affectedPackageNames, formatAffectedValidationScope } from "../affected.js";
 import { refreshDoraIndex } from "../dora.js";
@@ -112,7 +112,11 @@ export async function reviewIssues(
           BRANCH: issue.branch,
           VALIDATION_SCOPE: validationScope,
         },
-      });
+      }, runCaptureFor(ctx, "reviewer", {
+        runName,
+        branch: issue.branch,
+        issues: [{ id: issue.id, title: issue.title, branch: issue.branch }],
+      }));
     } else {
       const validationScope = await validationScopeForIssues(ctx, needsReview);
       await runSandboxAgent(sb, {
@@ -126,7 +130,11 @@ export async function reviewIssues(
           ...clusterPromptArgs(cluster),
           VALIDATION_SCOPE: validationScope,
         },
-      });
+      }, runCaptureFor(ctx, "reviewer", {
+        runName,
+        branch: needsReview[0]!.branch,
+        issues: needsReview.map((i) => ({ id: i.id, title: i.title, branch: i.branch })),
+      }));
     }
 
     for (const issue of needsReview) {

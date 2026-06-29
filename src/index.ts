@@ -69,6 +69,26 @@ export {
 } from "./parallel.js";
 export { SHARED_SANDBOX_MOUNTS } from "./sandbox.js";
 export {
+  captureRunSessions,
+  ensureTranscriptDirs,
+  aggregateTokenUsage,
+  deriveDocRef,
+  extractSessionDigests,
+  extractSessionIds,
+  transcriptChatsDirFor,
+  transcriptClaudeProjectsDirFor,
+  transcriptCodexSessionsDirFor,
+  transcriptPiSessionsDirFor,
+  transcriptsDirFor,
+  withSessionCapture,
+  type RunCaptureMeta,
+  type RunTiming,
+  type SessionCaptureCtx,
+  type SessionDigestEntry,
+  type TokenUsageSnapshot,
+} from "./session-capture.js";
+export { runCaptureFor, type RunCapture } from "./sandbox-agent.js";
+export {
   branchNameForIssue,
   buildEpicBrief,
   buildGlobalOpenIssueAnalysis,

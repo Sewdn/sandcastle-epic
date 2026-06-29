@@ -3,6 +3,7 @@ import type { EpicContext } from "../context.js";
 import { agentRunConfig } from "../agent-run.js";
 import { agentForRole } from "../agent-provider.js";
 import { sandboxRunBase } from "../sandbox.js";
+import { runCaptureFor, runSandcastleAgent } from "../sandbox-agent.js";
 import type { PlannedIssue } from "../types.js";
 import { skillsPromptArgs } from "../skills.js";
 
@@ -10,7 +11,7 @@ export async function mergeIssueBranchesWithAgent(
   ctx: EpicContext,
   issues: PlannedIssue[],
 ): Promise<void> {
-  await sandcastle.run({
+  await runSandcastleAgent(sandcastle.run, {
     ...sandboxRunBase(ctx),
     ...agentRunConfig(ctx, {
       role: "merger",
@@ -26,7 +27,11 @@ export async function mergeIssueBranchesWithAgent(
       BRANCHES: issues.map((i) => `- ${i.branch}`).join("\n"),
       ISSUES: issues.map((i) => `- ${i.id}: ${i.title}`).join("\n"),
     },
-  });
+  }, runCaptureFor(ctx, "merger", {
+    runName: "merger",
+    branch: ctx.config.integrationBranch,
+    issues: issues.map((i) => ({ id: i.id, title: i.title, branch: i.branch })),
+  }));
 }
 
 export async function mergeIntegrationBranchWithAgent(
@@ -34,7 +39,7 @@ export async function mergeIntegrationBranchWithAgent(
   sourceBranch: string,
   sourceEpic: string,
 ): Promise<void> {
-  await sandcastle.run({
+  await runSandcastleAgent(sandcastle.run, {
     ...sandboxRunBase(ctx),
     ...agentRunConfig(ctx, {
       role: "merger",
@@ -50,5 +55,8 @@ export async function mergeIntegrationBranchWithAgent(
       UPSTREAM_BRANCH: sourceBranch,
       UPSTREAM_EPIC: sourceEpic,
     },
-  });
+  }, runCaptureFor(ctx, "merger", {
+    runName: "merger-integration",
+    branch: ctx.config.integrationBranch,
+  }));
 }

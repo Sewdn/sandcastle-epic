@@ -4,7 +4,7 @@ import { agentRunConfig } from "../agent-run.js";
 import { agentForRole } from "../agent-provider.js";
 import { ensureIntegrationBranch } from "../git.js";
 import { formatInterventionLogRefs, type InterventionBrief } from "../intervention.js";
-import { runSandcastleAgent } from "../sandbox-agent.js";
+import { runCaptureFor, runSandcastleAgent } from "../sandbox-agent.js";
 import { sandboxRunBase } from "../sandbox.js";
 import { skillsPromptArgs } from "../skills.js";
 
@@ -36,5 +36,8 @@ export async function runSupervisor(ctx: EpicContext, brief: InterventionBrief):
       PENDING_BRANCHES: pendingSummary,
       LOG_FILES: formatInterventionLogRefs(brief.recentLogPaths),
     },
-  });
+  }, runCaptureFor(ctx, "supervisor", {
+    runName: "supervisor",
+    branch: ctx.config.integrationBranch,
+  }));
 }

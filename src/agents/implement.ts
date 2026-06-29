@@ -3,7 +3,7 @@ import type { EpicContext } from "../context.js";
 import { ensureIssueBranches, issuesWithCommits } from "../git.js";
 import { clusterLabel, clusterPromptArgs, implementerRunName } from "../cluster/helpers.js";
 import { createSandboxBase } from "../sandbox.js";
-import { runSandboxAgent } from "../sandbox-agent.js";
+import { runCaptureFor, runSandboxAgent } from "../sandbox-agent.js";
 import { agentRunConfig } from "../agent-run.js";
 import { mergeIssueBranches } from "../merge.js";
 import { resolveStalledBranches } from "./resolver.js";
@@ -55,7 +55,11 @@ export async function implementCluster(ctx: EpicContext, cluster: IssueCluster):
           ISSUE_TITLE: issue.title,
           BRANCH: issue.branch,
         },
-      });
+      }, runCaptureFor(ctx, "implementer", {
+        runName,
+        branch: issue.branch,
+        issues: [{ id: issue.id, title: issue.title, branch: issue.branch }],
+      }));
     } else {
       await runSandboxAgent(sandbox, {
         ...agentRunConfig(ctx, { role: "implementer", branch: primary.branch, name: runName }),
@@ -76,7 +80,11 @@ export async function implementCluster(ctx: EpicContext, cluster: IssueCluster):
             .map((i, n) => `${n + 1}. #${i.id}: ${i.title} → ${i.branch}`)
             .join("\n"),
         },
-      });
+      }, runCaptureFor(ctx, "implementer", {
+        runName,
+        branch: primary.branch,
+        issues: cluster.issues.map((i) => ({ id: i.id, title: i.title, branch: i.branch })),
+      }));
     }
   } finally {
     await sandbox.close();

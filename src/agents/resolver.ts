@@ -4,7 +4,7 @@ import { agentRunConfig } from "../agent-run.js";
 import { agentForRole } from "../agent-provider.js";
 import { clusterPromptArgs } from "../cluster/helpers.js";
 import { createSandboxBase } from "../sandbox.js";
-import { runSandboxAgent } from "../sandbox-agent.js";
+import { runCaptureFor, runSandboxAgent } from "../sandbox-agent.js";
 import type { PlannedIssue } from "../types.js";
 import { skillsPromptArgs } from "../skills.js";
 
@@ -40,7 +40,11 @@ export async function resolveStalledBranches(
         STALL_REASON: stallReason,
         PRIMARY_BRANCH: primary.branch,
       },
-    });
+    }, runCaptureFor(ctx, "resolver", {
+      runName,
+      branch: primary.branch,
+      issues: issues.map((i) => ({ id: i.id, title: i.title, branch: i.branch })),
+    }));
   } finally {
     await sandbox.close();
   }

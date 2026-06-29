@@ -26,7 +26,9 @@ import {
   flattenClusters,
 } from "../planning.js";
 import { sandboxRunBase } from "../sandbox.js";
+import { runCaptureFor, runSandcastleAgent } from "../sandbox-agent.js";
 import { epicPlanSchema, type IssueCluster } from "../types.js";
+import type { z } from "zod";
 import { skillsPromptArgs } from "../skills.js";
 
 async function finalizeClusters(
@@ -90,7 +92,7 @@ export async function runEpicPlanner(ctx: EpicContext): Promise<IssueCluster[]> 
   }
 
   try {
-    const plan = await sandcastle.run({
+    const plan = (await runSandcastleAgent(sandcastle.run, {
       ...sandboxRunBase(ctx),
       ...agentRunConfig(ctx, {
         role: "planner",
@@ -111,7 +113,10 @@ export async function runEpicPlanner(ctx: EpicContext): Promise<IssueCluster[]> 
         ),
       },
       output: sandcastle.Output.object({ tag: "plan", schema: epicPlanSchema }),
-    });
+    }, runCaptureFor(ctx, "planner", {
+      runName: "planner",
+      branch: ctx.config.integrationBranch,
+    }))) as sandcastle.RunResult & { output: z.infer<typeof epicPlanSchema> };
 
     const finalized = await finalizeClusters(ctx, plan.output.clusters, brief);
     if (finalized.length > 0) {

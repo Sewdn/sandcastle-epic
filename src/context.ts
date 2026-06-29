@@ -2,6 +2,13 @@ import path from "node:path";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 import { configureHostGit, resolveConfig } from "./config.js";
 import { sandboxHooks, SHARED_SANDBOX_MOUNTS } from "./sandbox.js";
+import {
+  ensureTranscriptDirs,
+  transcriptChatsDirFor,
+  transcriptClaudeProjectsDirFor,
+  transcriptCodexSessionsDirFor,
+  transcriptPiSessionsDirFor,
+} from "./session-capture.js";
 import type { ProjectMap } from "./project-map.js";
 import type { EpicSandcastleConfig, PromptPaths, ResolvedEpicConfig } from "./types.js";
 
@@ -10,6 +17,10 @@ const HOST_EFFECT_REFERENCE_PATH = `${process.env.HOME}/.local/share/effect-solu
 const AGENTS_SKILLS_PATH = "/home/agent/.agents/skills";
 const CLAUDE_SKILLS_PATH = "/home/agent/.claude/skills";
 const CURSOR_SKILLS_PATH = "/home/agent/.cursor/skills";
+const CURSOR_CHATS_PATH = "/home/agent/.cursor/chats";
+const CLAUDE_PROJECTS_PATH = "/home/agent/.claude/projects";
+const CODEX_SESSIONS_PATH = "/home/agent/.codex/sessions";
+const PI_SESSIONS_PATH = "/home/agent/.pi/agent/sessions";
 
 export type EpicContext = {
   readonly config: ResolvedEpicConfig;
@@ -33,6 +44,11 @@ function sharedRepoMounts(repoRoot: string) {
 
 export function createEpicContext(config: EpicSandcastleConfig): EpicContext {
   const resolved = resolveConfig(config);
+
+  // Persist agent transcripts under `.sandcastle/transcripts/` with per-harness
+  // subdirs bind-mounted into the sandbox. Created up front so docker mount
+  // existence checks pass on the first run.
+  ensureTranscriptDirs(resolved.sandcastleDir);
 
   const sandboxDocker = docker({
     imageName: resolved.sandboxImage,
@@ -62,6 +78,22 @@ export function createEpicContext(config: EpicSandcastleConfig): EpicContext {
         hostPath: "~/.cursor/skills",
         sandboxPath: CURSOR_SKILLS_PATH,
         readonly: true,
+      },
+      {
+        hostPath: transcriptChatsDirFor(resolved.sandcastleDir),
+        sandboxPath: CURSOR_CHATS_PATH,
+      },
+      {
+        hostPath: transcriptClaudeProjectsDirFor(resolved.sandcastleDir),
+        sandboxPath: CLAUDE_PROJECTS_PATH,
+      },
+      {
+        hostPath: transcriptCodexSessionsDirFor(resolved.sandcastleDir),
+        sandboxPath: CODEX_SESSIONS_PATH,
+      },
+      {
+        hostPath: transcriptPiSessionsDirFor(resolved.sandcastleDir),
+        sandboxPath: PI_SESSIONS_PATH,
       },
     ],
     env: {
