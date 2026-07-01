@@ -6,6 +6,8 @@ import { integrationBranchForEpic, parseEpicList, validateEpicSequence } from ".
 import { loadCanonicalEpicSequence, loadEpicSequenceForPhase } from "./backlog.js";
 import {
   bootstrapIntegrationBranchFromEpic,
+  bootstrapIntegrationBranchFromMain,
+  DEFAULT_MAIN_BRANCH,
   integrationBranchExists,
   pushIntegrationBranchIfEnabled,
   type LongRunHandoffOptions,
@@ -53,6 +55,7 @@ function handoffOptions(
     pushRemotes: config.pushRemotes,
     repoRoot: baseConfig.repoRoot,
     sandcastleDir: baseConfig.sandcastleDir,
+    mainBranch: config.mainBranch ?? DEFAULT_MAIN_BRANCH,
   };
 }
 
@@ -82,6 +85,12 @@ async function prepareFirstEpicInChain(
       `  Resuming after ${prior}: bootstrapping ${integrationBranchForEpic(firstEpic)}…`,
     );
     await bootstrapIntegrationBranchFromEpic(prior, firstEpic, handoff);
+  } else if (!(await integrationBranchExists(integrationBranchForEpic(firstEpic)))) {
+    const mainBranch = longRun.mainBranch ?? DEFAULT_MAIN_BRANCH;
+    console.log(
+      `  No prior completed epic; bootstrapping ${integrationBranchForEpic(firstEpic)} from ${mainBranch}…`,
+    );
+    await bootstrapIntegrationBranchFromMain(firstEpic, { ...handoff, mainBranch });
   }
 
   await installHostDependencies(baseConfig.repoRoot);
@@ -281,6 +290,7 @@ export function resolveLongRunConfig(env: {
   epics?: string;
   push?: string;
   phase?: string;
+  mainBranch?: string;
   repoRoot: string;
   epicsDir?: string;
   /** @deprecated Prefer repoRoot-only; canonical order comes from issue backlog YAML. */
@@ -308,6 +318,7 @@ export function resolveLongRunConfig(env: {
     pushRemotes: env.push === "1" || env.push?.toLowerCase() === "true",
     phase,
     canonicalEpicSequence: canonicalEpics,
+    mainBranch: env.mainBranch?.trim() || DEFAULT_MAIN_BRANCH,
   };
 }
 

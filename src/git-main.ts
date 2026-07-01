@@ -6,11 +6,57 @@ export type LongRunHandoffOptions = {
   readonly pushRemotes: boolean;
   readonly repoRoot: string;
   readonly sandcastleDir: string;
+  /** Fallback when prior integration branches were merged and removed (default: main). */
+  readonly mainBranch?: string;
 };
+
+export const DEFAULT_MAIN_BRANCH = "main";
+
+/** Git ref to seed the next integration branch when the prior epic branch may be gone. */
+export function integrationHandoffSeedRef(input: {
+  readonly previousBranch: string;
+  readonly previousBranchExists: boolean;
+  readonly mainBranch: string;
+}): string {
+  return input.previousBranchExists ? input.previousBranch : input.mainBranch;
+}
+
+async function createOrRefreshIntegrationBranchFromRef(
+  nextBranch: string,
+  sourceRef: string,
+  options: LongRunHandoffOptions,
+): Promise<string> {
+  const nextExists = await integrationBranchExists(nextBranch);
+
+  if (!nextExists) {
+    console.log(`  Creating ${nextBranch} from ${sourceRef}…`);
+    await $`git checkout -b ${nextBranch} ${sourceRef}`;
+  } else {
+    console.log(`  Refreshing existing ${nextBranch} from ${sourceRef}…`);
+    await $`git checkout ${nextBranch}`;
+    const ff = await $`git merge ${sourceRef} --ff-only`.quiet().nothrow();
+    if (ff.exitCode !== 0) {
+      throw new Error(
+        `${nextBranch} exists but is not a fast-forward from ${sourceRef}. ` +
+          `Reconcile manually before long-run orchestration.`,
+      );
+    }
+  }
+
+  if (options.pushRemotes) {
+    await pushIntegrationBranchIfEnabled(nextBranch, options);
+  }
+
+  return nextBranch;
+}
 
 export type MergeToMainOptions = LongRunHandoffOptions & {
   readonly mainBranch: string;
 };
+
+export async function integrationBranchExists(branch: string): Promise<boolean> {
+  return (await $`git rev-parse --verify ${branch}`.quiet().nothrow()).exitCode === 0;
+}
 
 export type IntegrationBranchSyncStep = {
   readonly targetBranch: string;
@@ -161,15 +207,15 @@ export async function bootstrapIntegrationBranchFromEpic(
   nextEpic: string,
   options: LongRunHandoffOptions,
 ): Promise<string> {
+  const mainBranch = options.mainBranch ?? DEFAULT_MAIN_BRANCH;
   const previousBranch = integrationBranchForEpic(previousEpic);
   const nextBranch = integrationBranchForEpic(nextEpic);
 
   await discardHostCheckoutBlockers(options.repoRoot, options.sandcastleDir);
 
-  const nextExists =
-    (await $`git rev-parse --verify ${nextBranch}`.quiet().nothrow()).exitCode === 0;
-  const previousExists =
-    (await $`git rev-parse --verify ${previousBranch}`.quiet().nothrow()).exitCode === 0;
+  const nextExists = await integrationBranchExists(nextBranch);
+  const previousExists = await integrationBranchExists(previousBranch);
+
   if (!previousExists) {
     if (nextExists) {
       console.log(
@@ -182,33 +228,15 @@ export async function bootstrapIntegrationBranchFromEpic(
       return nextBranch;
     }
 
-    throw new Error(
-      `Previous integration branch ${previousBranch} not found. Complete epic ${previousEpic} first.`,
+    console.log(
+      `  Previous ${previousBranch} not found (likely merged to ${mainBranch}); bootstrapping ${nextBranch} from ${mainBranch}…`,
     );
+    return bootstrapIntegrationBranchFromMain(nextEpic, { ...options, mainBranch });
   }
 
   await $`git checkout ${previousBranch}`;
 
-  if (!nextExists) {
-    console.log(`  Creating ${nextBranch} from ${previousBranch}…`);
-    await $`git checkout -b ${nextBranch} ${previousBranch}`;
-  } else {
-    console.log(`  Refreshing existing ${nextBranch} from ${previousBranch}…`);
-    await $`git checkout ${nextBranch}`;
-    const ff = await $`git merge ${previousBranch} --ff-only`.quiet().nothrow();
-    if (ff.exitCode !== 0) {
-      throw new Error(
-        `${nextBranch} exists but is not a fast-forward from ${previousBranch}. ` +
-          `Reconcile manually before long-run orchestration.`,
-      );
-    }
-  }
-
-  if (options.pushRemotes) {
-    await pushIntegrationBranchIfEnabled(nextBranch, options);
-  }
-
-  return nextBranch;
+  return createOrRefreshIntegrationBranchFromRef(nextBranch, previousBranch, options);
 }
 
 /** Ordered merge steps to restore main → first epic → … → last epic integration branches. */
@@ -235,10 +263,6 @@ export function buildIntegrationBranchSyncSteps(
   }
 
   return steps;
-}
-
-export async function integrationBranchExists(branch: string): Promise<boolean> {
-  return (await $`git rev-parse --verify ${branch}`.quiet().nothrow()).exitCode === 0;
 }
 
 async function mergeSourceIntoTarget(

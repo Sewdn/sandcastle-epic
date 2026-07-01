@@ -1,5 +1,30 @@
 import { describe, expect, test } from "bun:test";
-import { buildIntegrationBranchSyncSteps } from "./git-main.js";
+import {
+  buildIntegrationBranchSyncSteps,
+  integrationHandoffSeedRef,
+} from "./git-main.js";
+
+describe("integrationHandoffSeedRef", () => {
+  test("uses the prior integration branch when it still exists", () => {
+    expect(
+      integrationHandoffSeedRef({
+        previousBranch: "integrate/epic-aa5",
+        previousBranchExists: true,
+        mainBranch: "main",
+      }),
+    ).toBe("integrate/epic-aa5");
+  });
+
+  test("falls back to main when the prior integration branch was merged", () => {
+    expect(
+      integrationHandoffSeedRef({
+        previousBranch: "integrate/epic-aa5",
+        previousBranchExists: false,
+        mainBranch: "main",
+      }),
+    ).toBe("main");
+  });
+});
 
 describe("buildIntegrationBranchSyncSteps", () => {
   test("returns empty list for no epics", () => {

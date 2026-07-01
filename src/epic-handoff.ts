@@ -82,9 +82,10 @@ export async function mergeDependencyIntegrationBranches(
 
   for (const step of steps) {
     if (!(await branchExists(step.sourceBranch))) {
-      throw new Error(
-        `Dependency integration branch ${step.sourceBranch} not found. Complete epic ${step.sourceEpic} first.`,
+      console.log(
+        `  Dependency ${step.sourceBranch} not found (likely merged to main); skipping cross-epic merge.`,
       );
+      continue;
     }
 
     const ahead = await countCommitsAheadOf(step.targetBranch, step.sourceBranch);

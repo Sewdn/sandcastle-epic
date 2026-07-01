@@ -137,6 +137,8 @@ export type LongRunSandcastleConfig = {
   phase?: string;
   /** Full cross-phase epic order for integration-branch handoff lookups. */
   canonicalEpicSequence?: readonly string[];
+  /** Host default branch when prior integration branches were merged (default: main). */
+  mainBranch?: string;
 };
 
 export type EpicLoopResult = {
