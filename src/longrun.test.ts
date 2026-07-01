@@ -58,6 +58,19 @@ describe("resolveLongRunConfig", () => {
       resolveLongRunConfig({ repoRoot, phase: "aa", epics: "a0,aa0" }),
     ).toThrow(/not in phase 'aa'/);
   });
+
+  test("accepts suffix epic slugs declared in backlog YAML", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "sandcastle-epic-longrun-suffix-"));
+    const epicsDir = join(repoRoot, "docs/epics");
+    mkdirSync(epicsDir, { recursive: true });
+
+    writePhaseBacklog(epicsDir, "aa", ["aa5", "aa5a", "aa6"]);
+
+    const config = resolveLongRunConfig({ repoRoot, phase: "aa", epics: "aa5a" });
+
+    expect(config.epics).toEqual(["aa5a"]);
+    expect(config.canonicalEpicSequence).toEqual(["aa5", "aa5a", "aa6"]);
+  });
 });
 
 describe("priorCompletedEpic", () => {

@@ -91,7 +91,9 @@ export async function runLongEpicOrchestration(
   baseConfig: EpicSandcastleConfig,
   longRun: LongRunOrchestrationOptions,
 ): Promise<LongRunOrchestrationResult> {
-  validateEpicSequence(longRun.epics);
+  validateEpicSequence(longRun.epics, {
+    knownEpics: longRun.canonicalEpicSequence,
+  });
 
   const issueCache = issueCacheOptionsFromEnv(baseConfig.sandcastleDir);
 

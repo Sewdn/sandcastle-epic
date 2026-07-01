@@ -18,11 +18,19 @@ describe("validateEpicSequence", () => {
   test("rejects empty and duplicate slugs", () => {
     expect(() => validateEpicSequence([])).toThrow(/empty/i);
     expect(() => validateEpicSequence(["a0", "a0"])).toThrow(/duplicate/i);
-    expect(() => validateEpicSequence(["x0"])).toThrow(/invalid/i);
+    expect(() => validateEpicSequence(["AA0"])).toThrow(/invalid/i);
+    expect(() => validateEpicSequence(["aa-5"])).toThrow(/invalid/i);
   });
 
-  test("accepts Phase AA slugs", () => {
-    expect(() => validateEpicSequence(["aa0", "aa1"])).not.toThrow();
+  test("accepts backlog-defined slugs including suffix variants", () => {
+    const knownEpics = ["aa0", "aa5", "aa5a", "aa6"];
+    expect(() => validateEpicSequence(["aa5a"], { knownEpics })).not.toThrow();
+    expect(() => validateEpicSequence(["aa0", "aa5a"], { knownEpics })).not.toThrow();
+    expect(() => validateEpicSequence(["x0"], { knownEpics })).toThrow(/not defined in the issue backlog/i);
+  });
+
+  test("accepts format-valid slugs when no backlog is supplied", () => {
+    expect(() => validateEpicSequence(["aa0", "aa5a"])).not.toThrow();
   });
 });
 

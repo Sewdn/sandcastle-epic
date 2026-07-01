@@ -109,6 +109,7 @@ export {
   integrationBranchForEpic,
   parseEpicList,
   validateEpicSequence,
+  type ValidateEpicSequenceOptions,
 } from "./epics.js";
 export {
   bootstrapIntegrationBranchFromEpic,
